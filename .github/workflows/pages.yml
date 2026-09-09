@@ -1,8 +1,7 @@
 name: Deploy GitHub Pages
 
-# The public site is the Analog Canvas / SPICE schematic editor build
-# (Vite dist from analog-canvas-js), NOT the legacy vanilla MNA simulator.
-# Publish with: scripts/publish-editor-pages.sh (or npm run publish:editor)
+# Deploys the Vite schematic editor build from ./site (not the legacy MNA UI).
+# Refresh ./site with: ./scripts/publish-editor-pages.sh
 
 on:
   workflow_dispatch:
@@ -21,10 +20,11 @@ concurrency:
 
 jobs:
   deploy:
-    if: ${{ hashFiles('site/index.html') != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Verify editor site bundle
+        run: test -f site/index.html && test -d site/assets
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
