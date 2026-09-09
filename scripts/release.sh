@@ -179,8 +179,19 @@ fi
 if ! git remote get-url "$REMOTE" >/dev/null 2>&1; then
   echo "Remote '$REMOTE' is not configured." >&2
   echo "Add it first, e.g.:" >&2
-  echo "  git remote add origin https://github.com/SJTU-YONGFU-RESEARCH-GRP/spice-simulator.git" >&2
+  echo "  git remote add origin git@github.com:SJTU-YONGFU-RESEARCH-GRP/spice-simulator.git" >&2
   exit 1
+fi
+
+# Prefer SSH when the remote is still HTTPS (WSL usually has working keys).
+remote_url="$(git remote get-url "$REMOTE")"
+if [[ "$remote_url" == https://github.com/* ]]; then
+  ssh_url="git@github.com:${remote_url#https://github.com/}"
+  ssh_url="${ssh_url%.git}.git"
+  if [[ -f "${HOME}/.ssh/id_ed25519" || -f "${HOME}/.ssh/id_rsa" ]]; then
+    echo "Switching $REMOTE to SSH: $ssh_url"
+    git remote set-url "$REMOTE" "$ssh_url"
+  fi
 fi
 
 git push -u "$REMOTE" "$branch"
