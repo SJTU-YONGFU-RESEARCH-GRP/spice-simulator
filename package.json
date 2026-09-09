@@ -2,18 +2,17 @@
   "name": "spice-simulator",
   "private": true,
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "homepage": "https://sjtu-yongfu-research-grp.github.io/spice-simulator/",
-  "description": "Browser SPICE-like circuit simulator (DC + TRAN)",
+  "description": "SPICE schematic editor (Analog Canvas JS) for GitHub Pages",
   "scripts": {
     "start": "node scripts/serve.mjs",
     "serve": "node scripts/serve.mjs",
     "test": "node scripts/smoke.mjs",
     "build:release": "node scripts/build-release.mjs",
-    "build:release:copy": "node scripts/build-release.mjs --skip-obfuscate",
+    "publish:editor": "bash scripts/publish-editor-pages.sh",
     "release": "bash scripts/release.sh",
-    "release:dry": "bash scripts/release.sh --dry-run",
-    "release:wsl": "wsl -e bash -lc \"cd /mnt/d/proj/spice-simulator && ./scripts/release.sh\""
+    "release:dry": "bash scripts/release.sh --dry-run"
   },
   "devDependencies": {
     "terser": "^5.39.0"

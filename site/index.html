@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#1e3d36" />
+    <link rel="manifest" href="/spice-simulator/manifest.webmanifest" />
+    <link rel="icon" href="/spice-simulator/icon.svg" />
+    <title>SPICE</title>
+    <script>
+      if (
+        localStorage.theme === "light" ||
+        (!localStorage.theme &&
+          matchMedia("(prefers-color-scheme: light)").matches)
+      ) {
+        document.documentElement.classList.add("light");
+      }
+    </script>
+    <script type="module" crossorigin src="/spice-simulator/assets/index-MvpldU5T.js"></script>
+    <link rel="modulepreload" crossorigin href="/spice-simulator/assets/rolldown-runtime-CbXtAM7H.js">
+    <link rel="modulepreload" crossorigin href="/spice-simulator/assets/jsx-dev-runtime-DuB4xY43.js">
+    <link rel="stylesheet" crossorigin href="/spice-simulator/assets/index-DSVVHmdC.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

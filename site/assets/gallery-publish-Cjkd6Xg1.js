@@ -1,0 +1,1 @@
+var e={status:`unreachable`,message:`Gallery publish is disabled in this client-only build`};async function t(){return{...e}}async function n(){return{...e}}function r(e){return e?.status===`unreachable`?`Gallery disabled: ${e.message}`:`Gallery publish is disabled in this client-only build`}export{t as n,n as r,r as t};
