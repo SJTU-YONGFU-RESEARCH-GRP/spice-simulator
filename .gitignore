@@ -1,0 +1,14 @@
+node_modules/
+.DS_Store
+dist/
+release/
+*.log
+.vscode/
+.idea/
+.cursor/
+_tmp_quiz_challenge_platform/
+
+# Large local PDK / characterization trees — keep out of the public repo
+models/pdk/
+models/char/
+models/plots/

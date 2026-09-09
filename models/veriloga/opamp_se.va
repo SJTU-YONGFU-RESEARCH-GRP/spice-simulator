@@ -1,0 +1,38 @@
+// Behavioral SE opamp (diff-in / single-ended out) for OpenVAF → OSDI / ngspice
+// Pins: inp inm out vdd vss
+`include "disciplines.vams"
+
+module opamp_se(inp, inm, out, vdd, vss);
+    inout inp, inm, out, vdd, vss;
+    electrical inp, inm, out, vdd, vss;
+    electrical outi, pole;
+
+    parameter real av0   = 10.0e3 from (0:inf);
+    parameter real gbw   = 1.0e6  from (0:inf);
+    parameter real rin   = 100.0e6 from (0:inf);
+    parameter real rout  = 10.0e3 from (0:inf);
+    parameter real vos   = 1.0e-3;
+    parameter real acm   = 10.0   from [0:inf);
+    parameter real swing = 0.9    from (0:inf);
+
+    localparam real PI    = 3.141592653589793;
+    localparam real fp    = gbw / av0;
+    localparam real rpole = 1.0e3;
+    localparam real cpole = 1.0 / (2.0 * PI * fp * rpole);
+
+    real mid, vic;
+
+    analog begin
+        mid = 0.5 * (V(vdd) + V(vss));
+        vic = 0.5 * (V(inp) + V(inm));
+        I(inp, inm) <+ V(inp, inm) / rin;
+        V(outi) <+ mid
+            + swing * tanh(av0 * (
+                (V(inp, inm) - vos)
+                + (acm / av0) * (vic - mid)
+              ) / (swing + 1.0e-12));
+        I(outi, pole) <+ V(outi, pole) / rpole;
+        I(pole) <+ cpole * ddt(V(pole));
+        V(out, pole) <+ I(out, pole) * rout;
+    end
+endmodule

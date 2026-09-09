@@ -1,0 +1,5 @@
+* Shared diode / default models for .include demos
+.model DDEFAULT D (Is=1e-14 N=1)
+.model D1N4148 D (Is=2.52e-9 N=1.752 Kf=0 Af=1)
+.model NMOS NMOS (Vto=0.7 Kp=200u Lambda=0.02)
+.model NPN NPN (Is=1e-15 Bf=100 Br=1 Vaf=50)
