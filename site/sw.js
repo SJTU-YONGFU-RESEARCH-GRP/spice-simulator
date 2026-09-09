@@ -3,7 +3,7 @@
 // Replaced by the Vite build with a digest of the emitted index.html. This
 // changes when its content-hashed application asset graph changes, allowing
 // activate() to remove the prior shell instead of retaining it indefinitely.
-const CACHE = "icm-static-shell-b4712f6bcfd6";
+const CACHE = "icm-static-shell-201dbdb4bb95";
 
 function scopeUrl() {
   return new URL(self.registration.scope);
@@ -14,7 +14,8 @@ function shellUrls() {
   return [
     new URL("./", scope).toString(),
     new URL("manifest.webmanifest", scope).toString(),
-    new URL("icon.svg", scope).toString(),
+    new URL("logo.png", scope).toString(),
+    new URL("favicon.png", scope).toString(),
     new URL("icon-192.png", scope).toString(),
     new URL("icon-512.png", scope).toString(),
   ];
