@@ -12,7 +12,8 @@
     "build:release": "node scripts/build-release.mjs",
     "build:release:copy": "node scripts/build-release.mjs --skip-obfuscate",
     "release": "bash scripts/release.sh",
-    "release:dry": "bash scripts/release.sh --dry-run"
+    "release:dry": "bash scripts/release.sh --dry-run",
+    "release:wsl": "wsl -e bash -lc \"cd /mnt/d/proj/spice-simulator && ./scripts/release.sh\""
   },
   "devDependencies": {
     "terser": "^5.39.0"

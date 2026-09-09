@@ -64,11 +64,16 @@ Sources: `DC`, `AC`, `PULSE(...)`, `SIN(vo va freq [td [theta [phase]]])`, `PWL(
 Site: [https://sjtu-yongfu-research-grp.github.io/spice-simulator/](https://sjtu-yongfu-research-grp.github.io/spice-simulator/)
 
 ```bash
-# bump + build obfuscated release/ + commit + tag + push
-npm run release -- 0.1.0          # exact version (first release)
-npm run release                   # patch bump
-npm run release -- minor
+# From WSL (recommended)
+cd /mnt/d/proj/spice-simulator
+chmod +x scripts/release.sh
+./scripts/release.sh 0.1.0          # exact version (first release)
+./scripts/release.sh                # patch bump
+./scripts/release.sh minor
 ./scripts/release.sh --dry-run
+
+# From Windows PowerShell → WSL
+wsl -e bash -lc 'cd /mnt/d/proj/spice-simulator && ./scripts/release.sh'
 ```
 
 Push to `main`/`master`. Workflow [`.github/workflows/pages.yml`](.github/workflows/pages.yml) builds `release/` and publishes that folder. Enable Pages → **GitHub Actions** in repo settings.

@@ -1,0 +1,20 @@
+# Normalize text files to LF so Windows + WSL share one history.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.mjs text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.cir text eol=lf
+*.lib text eol=lf
+*.va text eol=lf
+
+# Binary / large vendor blobs
+*.wasm binary
+*.osdi binary
+vendor/ngspice.js -text

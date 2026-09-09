@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Create a versioned release: bump semver, build obfuscated release/, commit, tag, push.
 #
+# Prefer running inside WSL (stable git + gh):
+#   wsl -e bash -lc 'cd /mnt/d/proj/spice-simulator && ./scripts/release.sh 0.1.0'
+#   cd /mnt/d/proj/spice-simulator && ./scripts/release.sh
+#
 # Usage:
 #   ./scripts/release.sh              # patch bump (0.1.0 -> 0.1.1)
 #   ./scripts/release.sh minor        # 0.1.0 -> 0.2.0
@@ -72,8 +76,8 @@ else
 fi
 
 tag="v${next}"
-branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo master)"
-if [[ "$branch" == "HEAD" ]]; then
+branch="$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+if [[ -z "$branch" || "$branch" == "HEAD" ]]; then
   branch="${RELEASE_BRANCH:-master}"
 fi
 
