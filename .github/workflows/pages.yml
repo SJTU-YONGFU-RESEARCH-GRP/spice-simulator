@@ -6,9 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
@@ -16,9 +14,6 @@ concurrency:
 
 jobs:
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,13 +25,11 @@ jobs:
         run: |
           npm ci || npm install
           npm run build:release
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Publish release/ to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          # Serve the obfuscated bundle only — not raw src/ from the repo root.
-          path: release
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./release
+          force_orphan: true
+          # Project site: https://sjtu-yongfu-research-grp.github.io/spice-simulator/
+          destination_dir: .
