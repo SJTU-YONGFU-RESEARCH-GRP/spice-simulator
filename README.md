@@ -1,6 +1,32 @@
 # SPICE Simulator
 
-Browser SPICE-like circuit simulator (vanilla ES modules). JS MNA engine for DC / TRAN / AC / NOISE / TF, plus optional ngspice WASM.
+[![License: CC BY 4.0](https://img.shields.io/badge/License-CC%20BY%204.0-green?logo=creativecommons&logoColor=white)](https://creativecommons.org/licenses/by/4.0/)
+[![JavaScript](https://img.shields.io/badge/javascript-ES%20modules-F7DF1E?logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript)
+[![Version](https://img.shields.io/badge/version-0.1.0-blue?logo=semver&logoColor=white)](https://github.com/SJTU-YONGFU-RESEARCH-GRP/spice-simulator)
+
+**Repository:** [SJTU-YONGFU-RESEARCH-GRP/spice-simulator](https://github.com/SJTU-YONGFU-RESEARCH-GRP/spice-simulator)
+
+**Live demo:** [https://sjtu-yongfu-research-grp.github.io/spice-simulator/](https://sjtu-yongfu-research-grp.github.io/spice-simulator/)
+
+Browser SPICE-like circuit simulator (vanilla ES modules). JS MNA engine for DC / TRAN / AC / NOISE / TF, plus optional ngspice WASM. Because it is a **JavaScript platform**, simulation runs in each user’s browser and **circuit data is retained by the individual** (local `localStorage`), not by a shared backend.
+
+## Table of contents
+
+- [Privacy and data retention](#privacy-and-data-retention)
+- [Quick start](#quick-start)
+- [Fork and self-host](#fork-and-self-host)
+- [Analyses (JS engine)](#analyses-js-engine)
+- [Engines](#engines)
+- [Deploy (GitHub Pages)](#deploy-github-pages)
+- [Public vs private lab](#public-vs-private-lab)
+- [Layout](#layout)
+- [License](#license)
+
+## Privacy and data retention
+
+- Netlists, theme, and UI preferences stay in the **browser** on that machine / profile.
+- The JS (and optional ngspice WASM) engines run **in the page**; default simulation does not upload netlists to our servers.
+- Fork or clone to host your own copy so students and labs keep data under their own site or local system.
 
 ## Quick start
 
@@ -14,7 +40,15 @@ Open [http://localhost:5173](http://localhost:5173). Hit **Run** (or F5). Cycle 
 node scripts/smoke.mjs   # or: npm test
 ```
 
-No build step and no npm install required.
+No build step and no npm install required for local use.
+
+## Fork and self-host
+
+1. Fork [SJTU-YONGFU-RESEARCH-GRP/spice-simulator](https://github.com/SJTU-YONGFU-RESEARCH-GRP/spice-simulator).
+2. Enable **GitHub Pages** via Actions on the fork (workflow publishes `release/`), **or** serve locally with `node scripts/serve.mjs`.
+3. Point users at your Pages URL or `http://localhost:5173`.
+
+Details for the public bundle live in [`release/README.md`](release/README.md).
 
 ## Analyses (JS engine)
 
@@ -76,7 +110,13 @@ chmod +x scripts/release.sh
 wsl -e bash -lc 'cd /mnt/d/proj/spice-simulator && ./scripts/release.sh'
 ```
 
-Push to `main`/`master`. Workflow [`.github/workflows/pages.yml`](.github/workflows/pages.yml) builds `release/` and publishes that folder. Enable Pages → **GitHub Actions** in repo settings.
+Push to `main`/`master`. Workflow [`.github/workflows/pages.yml`](.github/workflows/pages.yml) builds `release/` and publishes it to the **`gh-pages`** branch.
+
+One-time GitHub setting (needed for the site URL to resolve):
+
+1. Open [repo Settings → Pages](https://github.com/SJTU-YONGFU-RESEARCH-GRP/spice-simulator/settings/pages)
+2. **Build and deployment → Source**: Deploy from a branch
+3. Branch: `gh-pages` / `/ (root)` → Save
 
 ## Public vs private lab
 
@@ -98,3 +138,9 @@ lib/models.cir      sample library
 scripts/serve.mjs   local static server
 scripts/build-release.mjs   obfuscated Pages bundle → release/
 ```
+
+## License
+
+Licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). See [LICENSE](LICENSE).
+
+Third-party assets (for example vendored ngspice) remain under their respective licenses.
