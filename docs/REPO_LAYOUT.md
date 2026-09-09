@@ -31,4 +31,8 @@ Enable Issues + label `icproj` on the lab repo only.
 
 ## Privacy
 
-Country/city on issue shares are optional with consent. **IP addresses are never written into issue bodies.**
+- Designs stay local by default.
+- Optional **Lab backup on Save/Export** posts to a private Cloudflare Worker.
+- Worker hashes `CF-Connecting-IP` (salted) and upserts one GitHub Issue per actor on `spice-simulator-lab`.
+- **IP addresses are never written into issue bodies.**
+- There is no public “Share via GitHub Issue” menu.

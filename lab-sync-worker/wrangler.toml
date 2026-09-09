@@ -1,0 +1,22 @@
+# Private lab backup: Save/Export → GitHub Issue (IP-keyed upsert)
+# Docs: lab-sync-worker/README.md
+
+name = "spice-lab-sync"
+main = "cloudflare-worker.js"
+compatibility_date = "2024-11-01"
+
+[vars]
+GITHUB_OWNER = "SJTU-YONGFU-RESEARCH-GRP"
+GITHUB_REPO = "spice-simulator-lab"
+ALLOW_ORIGIN = "*"
+
+[[kv_namespaces]]
+binding = "LAB_ACTORS"
+# Create with: wrangler kv namespace create LAB_ACTORS
+# Then paste the id here:
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_KV_PREVIEW_ID"
+
+# Secrets (not committed):
+#   wrangler secret put GITHUB_TOKEN
+#   wrangler secret put IP_HASH_SALT
