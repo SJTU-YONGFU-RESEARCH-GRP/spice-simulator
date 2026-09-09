@@ -1,45 +1,41 @@
 # SPICE Simulator (schematic editor)
 
-Browser schematic editor with in-browser ngspice (WASM).  
-**This is the Vite app you run locally at** `http://127.0.0.1:5173/` — not the older vanilla netlist-only MNA demo.
+Public GitHub Pages host for the Vite schematic editor  
+(local: `http://127.0.0.1:5173/` from `analog-canvas-js`).
 
-## Public site
+**Site:** https://sjtu-yongfu-research-grp.github.io/spice-simulator/
 
-https://sjtu-yongfu-research-grp.github.io/spice-simulator/
-
-## Develop (editor)
+## Develop
 
 ```bash
-cd /mnt/d/proj/analog-canvas-js   # or d:\proj\analog-canvas-js
+cd /mnt/d/proj/analog-canvas-js
 pnpm install
-pnpm --filter @icm/editor dev    # → http://127.0.0.1:5173/
+pnpm --filter @icm/editor dev
 ```
 
-## Publish the editor to GitHub Pages
-
-From WSL:
+## Publish
 
 ```bash
 cd /mnt/d/proj/spice-simulator
-chmod +x scripts/publish-editor-pages.sh
 ./scripts/publish-editor-pages.sh
+./scripts/release.sh          # optional version tag
 ```
 
-That builds `@icm/editor` with `base=/spice-simulator/`, copies into `./site`, commits, and pushes. CI deploys `site/` → `gh-pages`.
+## Layout
 
-## Version tags
+| Path | Role |
+|---|---|
+| `site/` | Built editor (Pages) |
+| `scripts/publish-editor-pages.sh` | Build + commit `site/` |
+| `scripts/release.sh` | Semver tag + GitHub Release |
+| `docs/` | Dual-repo / lab notes |
 
-```bash
-./scripts/release.sh 0.2.0   # bump VERSION + tag (after publishing site/)
-```
+Legacy vanilla MNA simulator code has been removed from this repository.
 
-## Private lab (issues)
+## Private lab
 
-Shared circuits / GitHub Issues live on private  
-[`spice-simulator-lab`](https://github.com/SJTU-YONGFU-RESEARCH-GRP/spice-simulator-lab) — not on this public Issues list.
-
-See [docs/REPO_LAYOUT.md](docs/REPO_LAYOUT.md).
+Issues: [`spice-simulator-lab`](https://github.com/SJTU-YONGFU-RESEARCH-GRP/spice-simulator-lab)
 
 ## License
 
-The shipped editor is based on Analog Canvas (AGPL). See `site/LICENSE.md` / `site/NOTICE.md` after a publish.
+Shipped UI is based on Analog Canvas (AGPL). See `site/LICENSE.md` / `site/NOTICE.md`.

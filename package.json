@@ -4,17 +4,10 @@
   "type": "module",
   "version": "0.2.0",
   "homepage": "https://sjtu-yongfu-research-grp.github.io/spice-simulator/",
-  "description": "SPICE schematic editor (Analog Canvas JS) for GitHub Pages",
+  "description": "SPICE schematic editor Pages publish repo (Analog Canvas JS)",
   "scripts": {
-    "start": "node scripts/serve.mjs",
-    "serve": "node scripts/serve.mjs",
-    "test": "node scripts/smoke.mjs",
-    "build:release": "node scripts/build-release.mjs",
     "publish:editor": "bash scripts/publish-editor-pages.sh",
     "release": "bash scripts/release.sh",
     "release:dry": "bash scripts/release.sh --dry-run"
-  },
-  "devDependencies": {
-    "terser": "^5.39.0"
   }
 }

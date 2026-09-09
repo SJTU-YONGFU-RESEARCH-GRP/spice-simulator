@@ -8,7 +8,9 @@ release/
 .cursor/
 _tmp_quiz_challenge_platform/
 
-# Large local PDK / characterization trees — keep out of the public repo
-models/pdk/
-models/char/
-models/plots/
+# Legacy vanilla simulator (deleted from this repo)
+src/
+styles/
+lib/
+vendor/
+models/

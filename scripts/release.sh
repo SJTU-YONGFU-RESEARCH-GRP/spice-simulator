@@ -1,29 +1,18 @@
 #!/usr/bin/env bash
-# Create a versioned release: bump semver, build obfuscated release/, commit, tag, push.
+# Version bump + tag + push for the public Pages repo.
 #
-# Prefer running inside WSL (stable git + gh):
-#   wsl -e bash -lc 'cd /mnt/d/proj/spice-simulator && ./scripts/release.sh 0.1.0'
+# Prefer WSL:
 #   cd /mnt/d/proj/spice-simulator && ./scripts/release.sh
+#   ./scripts/release.sh minor
+#   ./scripts/release.sh 0.3.0 --no-push
 #
-# Usage:
-#   ./scripts/release.sh              # patch bump (0.1.0 -> 0.1.1)
-#   ./scripts/release.sh minor        # 0.1.0 -> 0.2.0
-#   ./scripts/release.sh major        # 0.1.0 -> 1.0.0
-#   ./scripts/release.sh 0.1.0        # set exact version (first release)
-#   ./scripts/release.sh patch --dry-run
-#   ./scripts/release.sh 0.1.0 --no-push
-#
-# Env:
-#   RELEASE_REMOTE   default: origin
-#   RELEASE_BRANCH   default: current branch (or master/main)
-#   SKIP_BUILD=1     skip npm run build:release
+# By default refreshes ./site from analog-canvas-js (SKIP_BUILD=1 to skip).
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# Author identity for commits/tags (does not write to git config).
 if [[ -z "$(git config user.name 2>/dev/null || true)" ]]; then
   export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-SJTU-YONGFU-RESEARCH-GRP}"
   export GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-$GIT_AUTHOR_NAME}"
@@ -45,7 +34,7 @@ for arg in "$@"; do
     patch|minor|major) BUMP="$arg" ;;
     [0-9]*.[0-9]*.[0-9]*) BUMP="$arg" ;;
     -h|--help)
-      sed -n '2,18p' "$0"
+      sed -n '2,12p' "$0"
       exit 0
       ;;
     *)
@@ -54,11 +43,6 @@ for arg in "$@"; do
       ;;
   esac
 done
-
-if [[ ! -f package.json ]]; then
-  echo "package.json not found in $ROOT" >&2
-  exit 1
-fi
 
 current="$(node --input-type=commonjs -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")"
 if [[ "$BUMP" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -83,11 +67,10 @@ fi
 
 PUBLIC_URL="https://sjtu-yongfu-research-grp.github.io/spice-simulator/"
 
-echo "SPICE Simulator release"
+echo "SPICE schematic editor release"
 echo "  current : $current"
 echo "  next    : $next ($tag)"
 echo "  branch  : $branch"
-echo "  remote  : $REMOTE"
 echo "  site    : $PUBLIC_URL"
 echo
 
@@ -96,12 +79,6 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   exit 0
 fi
 
-if [[ -n "$(git status --porcelain 2>/dev/null || true)" ]]; then
-  # Allow dirty tree only if we are about to commit everything for release.
-  echo "Working tree has local changes; they will be included in the release commit."
-fi
-
-# Keep homepage / version in package.json in sync.
 node --input-type=commonjs <<EOF
 const fs = require("fs");
 const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
@@ -113,53 +90,47 @@ EOF
 printf '%s\n' "$next" > VERSION
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
-  if [[ ! -d node_modules/terser ]]; then
-    npm install
-  fi
-  npm run build:release
-else
-  echo "SKIP_BUILD=1 — not rebuilding release/"
+  bash scripts/publish-editor-pages.sh --no-push 2>/dev/null || {
+    # publish script always pushes; rebuild site inline instead
+    EDITOR_ROOT="${EDITOR_ROOT:-/mnt/d/proj/analog-canvas-js}"
+    if [[ -d "$EDITOR_ROOT/apps/editor" ]]; then
+      (cd "$EDITOR_ROOT" && pnpm --filter @icm/editor run build:pages)
+      rm -rf site
+      mkdir -p site
+      cp -a "$EDITOR_ROOT/apps/editor/dist"/. site/
+      cp -f site/index.html site/404.html
+      [[ -f "$EDITOR_ROOT/LICENSE.md" ]] && cp -f "$EDITOR_ROOT/LICENSE.md" site/
+      [[ -f "$EDITOR_ROOT/NOTICE.md" ]] && cp -f "$EDITOR_ROOT/NOTICE.md" site/
+    else
+      echo "WARN: editor root missing; keeping existing ./site"
+    fi
+  }
 fi
 
-# Verify release bundle exists
-if [[ ! -f release/index.html ]] || [[ ! -f release/release-manifest.json ]]; then
-  echo "release/ bundle missing — build failed?" >&2
+if [[ ! -f site/index.html ]]; then
+  echo "site/index.html missing — publish the editor first." >&2
   exit 1
 fi
 
-# Stamp version into the Pages bundle
-node --input-type=commonjs <<EOF
+if [[ -f site/release-manifest.json ]]; then
+  node --input-type=commonjs <<EOF
 const fs = require("fs");
-const manifest = JSON.parse(fs.readFileSync("release/release-manifest.json", "utf8"));
-manifest.version = "$next";
-manifest.homepage = "$PUBLIC_URL";
-fs.writeFileSync(
-  "release/release-manifest.json",
-  JSON.stringify(manifest, null, 2) + "\n",
-);
+const m = JSON.parse(fs.readFileSync("site/release-manifest.json", "utf8"));
+m.version = "$next";
+m.homepage = "$PUBLIC_URL";
+fs.writeFileSync("site/release-manifest.json", JSON.stringify(m, null, 2) + "\n");
 EOF
+fi
 
 git add -A
-# Do not accidentally stage secrets or local junk if somehow un-ignored
 git reset -q -- .cursor 2>/dev/null || true
 
-if git rev-parse --verify HEAD >/dev/null 2>&1; then
-  if git diff --cached --quiet; then
-    echo "Nothing to commit (already at $next?)."
-  else
-    git commit -m "$(cat <<EOF
-Release ${tag}
-
-Public site: ${PUBLIC_URL}
-EOF
-)"
-  fi
+if git diff --cached --quiet; then
+  echo "Nothing to commit (already at $next?)."
 else
-  # First commit on an empty repo
   git commit -m "$(cat <<EOF
 Release ${tag}
 
-Initial public release of SPICE Simulator.
 Public site: ${PUBLIC_URL}
 EOF
 )"
@@ -168,7 +139,7 @@ fi
 if git rev-parse "$tag" >/dev/null 2>&1; then
   echo "Tag $tag already exists locally."
 else
-  git tag -a "$tag" -m "SPICE Simulator ${tag}"
+  git tag -a "$tag" -m "SPICE schematic editor ${tag}"
 fi
 
 if [[ "$NO_PUSH" -eq 1 ]]; then
@@ -176,20 +147,11 @@ if [[ "$NO_PUSH" -eq 1 ]]; then
   exit 0
 fi
 
-if ! git remote get-url "$REMOTE" >/dev/null 2>&1; then
-  echo "Remote '$REMOTE' is not configured." >&2
-  echo "Add it first, e.g.:" >&2
-  echo "  git remote add origin git@github.com:SJTU-YONGFU-RESEARCH-GRP/spice-simulator.git" >&2
-  exit 1
-fi
-
-# Prefer SSH when the remote is still HTTPS (WSL usually has working keys).
 remote_url="$(git remote get-url "$REMOTE")"
 if [[ "$remote_url" == https://github.com/* ]]; then
   ssh_url="git@github.com:${remote_url#https://github.com/}"
   ssh_url="${ssh_url%.git}.git"
   if [[ -f "${HOME}/.ssh/id_ed25519" || -f "${HOME}/.ssh/id_rsa" ]]; then
-    echo "Switching $REMOTE to SSH: $ssh_url"
     git remote set-url "$REMOTE" "$ssh_url"
   fi
 fi
@@ -198,24 +160,18 @@ git push -u "$REMOTE" "$branch"
 git push "$REMOTE" "$tag"
 
 if command -v gh >/dev/null 2>&1; then
-  if gh release view "$tag" >/dev/null 2>&1; then
-    echo "GitHub release $tag already exists."
-  else
+  if ! gh release view "$tag" >/dev/null 2>&1; then
     gh release create "$tag" \
-      --title "SPICE Simulator ${tag}" \
+      --title "SPICE schematic editor ${tag}" \
       --notes "$(cat <<EOF
-## SPICE Simulator ${tag}
+## SPICE schematic editor ${tag}
 
 - Site: ${PUBLIC_URL}
-- Obfuscated Pages bundle built via \`npm run build:release\`
-- Issues / lab shares belong on the private repo \`spice-simulator-lab\`
-
+- Vite editor bundle in \`site/\` (from analog-canvas-js)
+- Issues belong on private \`spice-simulator-lab\`
 EOF
 )"
   fi
-else
-  echo "gh CLI not found — tag pushed; create the GitHub Release in the UI if desired."
 fi
 
-echo
 echo "Done. ${tag} → ${PUBLIC_URL}"
