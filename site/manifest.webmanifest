@@ -1,7 +1,7 @@
 {
-  "name": "SPICE CIRCUIT",
+  "name": "SPICE Simulator",
   "short_name": "SPICE",
-  "description": "Flavor & technology — local-first circuit schematic editor",
+  "description": "Local-first SPICE schematic editor",
   "id": "./",
   "start_url": "./",
   "scope": "./",

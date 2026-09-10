@@ -1,6 +1,6 @@
 {
   "id": "edu-cmos-ngspice-wasm-v1",
-  "displayName": "Edu CMOS (in-browser ngspice)",
+  "displayName": "Default library",
   "qualifiedScope": {
     "sections": []
   },
