@@ -1,14 +1,14 @@
 # SPICE Simulator (schematic editor)
 
 Public GitHub Pages host for the Vite schematic editor  
-(local: `http://127.0.0.1:5173/` from `analog-canvas-js`).
+(local: `http://127.0.0.1:5173/` from the editor source tree).
 
 **Site:** https://sjtu-yongfu-research-grp.github.io/spice-simulator/
 
 ## Develop
 
 ```bash
-cd /mnt/d/proj/analog-canvas-js
+cd /mnt/d/proj/analog-canvas-js   # or spice-simulator-editor after rename
 pnpm install
 pnpm --filter @icm/editor dev
 ```
@@ -38,4 +38,4 @@ Issues: [`spice-simulator-lab`](https://github.com/SJTU-YONGFU-RESEARCH-GRP/spic
 
 ## License
 
-Shipped UI is based on Analog Canvas (AGPL). See `site/LICENSE.md` / `site/NOTICE.md`.
+Shipped UI is a SPICE Simulator build derived from SPICE Simulator (AGPL). See `site/LICENSE.md` / `site/NOTICE.md`.

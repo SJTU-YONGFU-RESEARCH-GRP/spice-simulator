@@ -31,7 +31,7 @@ Create labels on the lab repo: `icproj`, `lab-sync`.
 
 ## Editor env
 
-In `analog-canvas-js/apps/editor/.env` (or CI):
+In the editor source tree `apps/editor/.env` (or CI):
 
 ```bash
 VITE_LAB_SYNC_ENDPOINT=https://spice-lab-sync.<your-subdomain>.workers.dev

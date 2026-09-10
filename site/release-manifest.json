@@ -2,5 +2,7 @@
   "app": "spice-schematic-editor",
   "source": "spice-simulator",
   "base": "/spice-simulator/",
-  "builtAt": "2026-09-10T05:23:56Z"
+  "builtAt": "2026-09-10T05:23:56Z",
+  "version": "0.2.5",
+  "homepage": "https://sjtu-yongfu-research-grp.github.io/spice-simulator/"
 }

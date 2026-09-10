@@ -4,17 +4,59 @@
 # Usage (from WSL):
 #   cd /mnt/d/proj/spice-simulator
 #   ./scripts/publish-editor-pages.sh
-#   EDITOR_ROOT=/mnt/d/proj/analog-canvas-js ./scripts/publish-editor-pages.sh
+#   EDITOR_ROOT=/path/to/editor-source ./scripts/publish-editor-pages.sh
 #
 # Builds @icm/editor with base=/spice-simulator/, copies into ./site,
 # commits, and pushes (CI then updates gh-pages).
+# Default EDITOR_ROOT resolves spice-simulator-editor, then analog-canvas-js.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-EDITOR_ROOT="${EDITOR_ROOT:-$(cd "$ROOT/../analog-canvas-js" 2>/dev/null && pwd || true)}"
-if [[ -z "${EDITOR_ROOT}" || ! -d "${EDITOR_ROOT}/apps/editor" ]]; then
-  EDITOR_ROOT="/mnt/d/proj/analog-canvas-js"
+
+# WSL often starts with apt Node 12 on PATH; prefer nvm Node 24 + corepack pnpm.
+ensure_pnpm() {
+  if command -v pnpm >/dev/null 2>&1; then
+    return 0
+  fi
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+  if [[ -s "$NVM_DIR/nvm.sh" ]]; then
+    # shellcheck disable=SC1091
+    . "$NVM_DIR/nvm.sh"
+    nvm use default >/dev/null 2>&1 || nvm use node >/dev/null 2>&1 || true
+  fi
+  if ! command -v pnpm >/dev/null 2>&1 && command -v corepack >/dev/null 2>&1; then
+    corepack enable >/dev/null 2>&1 || true
+    corepack prepare pnpm@latest --activate >/dev/null 2>&1 || true
+  fi
+  if ! command -v pnpm >/dev/null 2>&1; then
+    echo "pnpm not found. In WSL: source ~/.nvm/nvm.sh && nvm use 24 && corepack enable" >&2
+    exit 1
+  fi
+  echo "Using pnpm $(pnpm -v) · node $(node -v)"
+}
+
+ensure_pnpm
+
+resolve_editor_root() {
+  local candidates=(
+    "${EDITOR_ROOT:-}"
+    "$ROOT/../spice-simulator-editor"
+    "$ROOT/../analog-canvas-js"
+    "/mnt/d/proj/spice-simulator-editor"
+    "/mnt/d/proj/analog-canvas-js"
+  )
+  local c
+  for c in "${candidates[@]}"; do
+    [[ -n "$c" && -d "$c/apps/editor" ]] && { printf '%s\n' "$(cd "$c" && pwd)"; return 0; }
+  done
+  return 1
+}
+
+EDITOR_ROOT="$(resolve_editor_root || true)"
+if [[ -z "${EDITOR_ROOT}" ]]; then
+  echo "Editor source not found. Set EDITOR_ROOT to spice-simulator-editor (or analog-canvas-js)." >&2
+  exit 1
 fi
 
 cd "$ROOT"
@@ -51,7 +93,7 @@ fi
 
 printf '%s\n' "{
   \"app\": \"spice-schematic-editor\",
-  \"source\": \"analog-canvas-js\",
+  \"source\": \"spice-simulator\",
   \"base\": \"/spice-simulator/\",
   \"builtAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
 }" > "$ROOT/site/release-manifest.json"

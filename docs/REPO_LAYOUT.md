@@ -14,7 +14,7 @@ scripts/release.sh
 docs/
 ```
 
-Editor **source** lives in `analog-canvas-js` (local/private development). Publish:
+Editor **source** lives in a local/private sibling checkout (`../spice-simulator-editor` or legacy `../analog-canvas-js`). Publish:
 
 ```bash
 cd /mnt/d/proj/spice-simulator

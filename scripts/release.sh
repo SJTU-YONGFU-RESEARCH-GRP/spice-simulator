@@ -6,12 +6,36 @@
 #   ./scripts/release.sh minor
 #   ./scripts/release.sh 0.3.0 --no-push
 #
-# By default refreshes ./site from analog-canvas-js (SKIP_BUILD=1 to skip).
+# By default refreshes ./site from the editor source tree (SKIP_BUILD=1 to skip).
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+
+# WSL often starts with apt Node 12 on PATH; prefer nvm Node 24 + corepack pnpm.
+ensure_pnpm() {
+  if command -v pnpm >/dev/null 2>&1; then
+    return 0
+  fi
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+  if [[ -s "$NVM_DIR/nvm.sh" ]]; then
+    # shellcheck disable=SC1091
+    . "$NVM_DIR/nvm.sh"
+    nvm use default >/dev/null 2>&1 || nvm use node >/dev/null 2>&1 || true
+  fi
+  if ! command -v pnpm >/dev/null 2>&1 && command -v corepack >/dev/null 2>&1; then
+    corepack enable >/dev/null 2>&1 || true
+    corepack prepare pnpm@latest --activate >/dev/null 2>&1 || true
+  fi
+  if ! command -v pnpm >/dev/null 2>&1; then
+    echo "pnpm not found. In WSL: source ~/.nvm/nvm.sh && nvm use 24 && corepack enable" >&2
+    exit 1
+  fi
+  echo "Using pnpm $(pnpm -v) · node $(node -v)"
+}
+
+ensure_pnpm
 
 if [[ -z "$(git config user.name 2>/dev/null || true)" ]]; then
   export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-SJTU-YONGFU-RESEARCH-GRP}"
@@ -92,7 +116,20 @@ printf '%s\n' "$next" > VERSION
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   bash scripts/publish-editor-pages.sh --no-push 2>/dev/null || {
     # publish script always pushes; rebuild site inline instead
-    EDITOR_ROOT="${EDITOR_ROOT:-/mnt/d/proj/analog-canvas-js}"
+    EDITOR_ROOT="${EDITOR_ROOT:-}"
+    if [[ -z "$EDITOR_ROOT" || ! -d "$EDITOR_ROOT/apps/editor" ]]; then
+      for c in \
+        "$ROOT/../spice-simulator-editor" \
+        "$ROOT/../analog-canvas-js" \
+        "/mnt/d/proj/spice-simulator-editor" \
+        "/mnt/d/proj/analog-canvas-js"
+      do
+        if [[ -d "$c/apps/editor" ]]; then
+          EDITOR_ROOT="$(cd "$c" && pwd)"
+          break
+        fi
+      done
+    fi
     if [[ -d "$EDITOR_ROOT/apps/editor" ]]; then
       (cd "$EDITOR_ROOT" && pnpm --filter @icm/editor run build:pages)
       rm -rf site
@@ -167,7 +204,7 @@ if command -v gh >/dev/null 2>&1; then
 ## SPICE schematic editor ${tag}
 
 - Site: ${PUBLIC_URL}
-- Vite editor bundle in \`site/\` (from analog-canvas-js)
+- Vite editor bundle in \`site/\` (SPICE schematic editor)
 - Issues belong on private \`spice-simulator-lab\`
 EOF
 )"
