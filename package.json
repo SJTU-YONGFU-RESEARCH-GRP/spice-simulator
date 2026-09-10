@@ -2,7 +2,7 @@
   "name": "spice-simulator",
   "private": true,
   "type": "module",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "homepage": "https://sjtu-yongfu-research-grp.github.io/spice-simulator/",
   "description": "SPICE schematic editor Pages publish repo",
   "scripts": {
