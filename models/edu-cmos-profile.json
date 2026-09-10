@@ -1,0 +1,19 @@
+{
+  "id": "edu-cmos-ngspice-wasm-v1",
+  "displayName": "Default library",
+  "qualifiedScope": {
+    "sections": []
+  },
+  "devices": [
+    "nmos_rvt",
+    "pmos_rvt",
+    "nmos_nat",
+    "nmos_dep",
+    "nmos_hvt",
+    "pmos_hvt",
+    "nmos_tox",
+    "pmos_tox",
+    "npn_l1",
+    "pnp_l1"
+  ]
+}
