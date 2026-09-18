@@ -1,0 +1,17 @@
+* Educational CMOS Level-1 (Shichman–Hodges) + BJT — browser SPICE profile
+* Included as: .include "/models/cmos.lib"
+*
+* MOSFET: nmos_rvt pmos_rvt nmos_nat nmos_dep nmos_hvt pmos_hvt nmos_tox pmos_tox
+* BJT: npn_l1 pnp_l1
+* Teaching context: L ≈ 0.18 µm, VDD ≈ 1.8 V (thin ox).
+
+.model nmos_rvt NMOS LEVEL=1 VTO=0.5 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model pmos_rvt PMOS LEVEL=1 VTO=-0.5 KP=100u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model nmos_nat NMOS LEVEL=1 VTO=0.0 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model nmos_dep NMOS LEVEL=1 VTO=-0.7 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model nmos_hvt NMOS LEVEL=1 VTO=0.7 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model pmos_hvt PMOS LEVEL=1 VTO=-0.7 KP=100u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model nmos_tox NMOS LEVEL=1 VTO=0.7 KP=80u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model pmos_tox PMOS LEVEL=1 VTO=-0.7 KP=40u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model npn_l1 NPN IS=1e-16 BF=100 NF=1 VAF=50 IKF=1e-2
+.model pnp_l1 PNP IS=1e-16 BF=50 NF=1 VAF=30 IKF=5e-3
