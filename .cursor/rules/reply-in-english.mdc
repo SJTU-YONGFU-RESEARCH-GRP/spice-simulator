@@ -1,0 +1,11 @@
+---
+description: Always reply in English, even when the user writes in Chinese
+alwaysApply: true
+---
+
+# Reply in English
+
+- Always respond in **English**, regardless of the language the user uses.
+- If the user writes in Chinese (or any other language), still answer in English.
+- You may quote or reference non-English terms from the user's message when needed for clarity, but explanations, questions, and all assistant prose must be in English.
+- Do not switch to Chinese because the user wrote in Chinese.
