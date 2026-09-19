@@ -8,7 +8,9 @@ compatibility_date = "2024-11-01"
 [vars]
 GITHUB_OWNER = "SJTU-YONGFU-RESEARCH-GRP"
 GITHUB_REPO = "spice-simulator-lab"
-ALLOW_ORIGIN = "*"
+# Keep browser writes limited to the published editor. Add a comma-separated
+# origin here when a separate staging deployment is intentionally enabled.
+ALLOW_ORIGIN = "https://sjtu-yongfu-research-grp.github.io"
 
 [[kv_namespaces]]
 binding = "LAB_ACTORS"

@@ -35,8 +35,6 @@ ensure_pnpm() {
   echo "Using pnpm $(pnpm -v) · node $(node -v)"
 }
 
-ensure_pnpm
-
 if [[ -z "$(git config user.name 2>/dev/null || true)" ]]; then
   export GIT_AUTHOR_NAME="${GIT_AUTHOR_NAME:-SJTU-YONGFU-RESEARCH-GRP}"
   export GIT_COMMITTER_NAME="${GIT_COMMITTER_NAME:-$GIT_AUTHOR_NAME}"
@@ -103,6 +101,8 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   exit 0
 fi
 
+ensure_pnpm
+
 node --input-type=commonjs <<EOF
 const fs = require("fs");
 const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
@@ -115,7 +115,8 @@ printf '%s\n' "$next" > VERSION
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   bash scripts/publish-editor-pages.sh --no-push 2>/dev/null || {
-    # publish script always pushes; rebuild site inline instead
+    # If the publish helper cannot run (for example, in a source-only checkout),
+    # rebuild the site inline instead.
     EDITOR_ROOT="${EDITOR_ROOT:-}"
     if [[ -z "$EDITOR_ROOT" || ! -d "$EDITOR_ROOT/apps/editor" ]]; then
       for c in \
@@ -182,15 +183,6 @@ fi
 if [[ "$NO_PUSH" -eq 1 ]]; then
   echo "Skipping push (--no-push). Local tag: $tag"
   exit 0
-fi
-
-remote_url="$(git remote get-url "$REMOTE")"
-if [[ "$remote_url" == https://github.com/* ]]; then
-  ssh_url="git@github.com:${remote_url#https://github.com/}"
-  ssh_url="${ssh_url%.git}.git"
-  if [[ -f "${HOME}/.ssh/id_ed25519" || -f "${HOME}/.ssh/id_rsa" ]]; then
-    git remote set-url "$REMOTE" "$ssh_url"
-  fi
 fi
 
 git push -u "$REMOTE" "$branch"

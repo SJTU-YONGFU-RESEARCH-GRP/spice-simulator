@@ -6,6 +6,12 @@
   "homepage": "https://sjtu-yongfu-research-grp.github.io/spice-simulator/",
   "description": "SPICE schematic editor Pages publish repo",
   "scripts": {
+    "test": "node --test",
+    "test:worker": "node --test lab-sync-worker/cloudflare-worker.test.mjs",
+    "test:project": "node --test scripts/project-roundtrip.test.mjs",
+    "test:netlist": "node --test scripts/erc-netlist.test.mjs",
+    "test:release-scripts": "node --test scripts/release-scripts.test.mjs",
+    "verify:site": "node scripts/verify-site.mjs",
     "publish:editor": "bash scripts/publish-editor-pages.sh",
     "release": "bash scripts/release.sh",
     "release:dry": "bash scripts/release.sh --dry-run"

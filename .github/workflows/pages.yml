@@ -24,7 +24,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Verify editor site bundle
-        run: test -f site/index.html && test -d site/assets
+        run: |
+          test -f site/index.html && test -d site/assets
+          node scripts/verify-site.mjs
+          node --test lab-sync-worker/cloudflare-worker.test.mjs
+          node --test scripts/project-roundtrip.test.mjs scripts/erc-netlist.test.mjs
+          node --test scripts/release-scripts.test.mjs
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:

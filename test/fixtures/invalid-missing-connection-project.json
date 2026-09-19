@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 47,
+  "id": "invalid-missing-connection",
+  "name": "Missing source return connection",
+  "source": {
+    "entry": null,
+    "dialect": "spice",
+    "sourcePolicy": "copy",
+    "files": []
+  },
+  "symbolLibrary": {
+    "id": "builtin",
+    "version": "fixture",
+    "hash": "fixture-hash"
+  },
+  "structureRevision": 1,
+  "topDocumentId": "document-top",
+  "documents": [
+    {
+      "id": "document-top",
+      "name": "Top",
+      "revision": 0,
+      "sourceStatus": "in-sync",
+      "netlist": {
+        "name": "TopCell",
+        "terminals": [],
+        "formalParameters": []
+      },
+      "instances": [
+        {
+          "id": "v1",
+          "symbolId": "voltage-source",
+          "placement": null,
+          "reference": "V1",
+          "netlist": {
+            "binding": {
+              "kind": "primitive",
+              "deviceClass": "voltage-source"
+            },
+            "parameters": {
+              "dc": "5"
+            }
+          }
+        },
+        {
+          "id": "r1",
+          "symbolId": "resistor",
+          "placement": null,
+          "reference": "R1",
+          "netlist": {
+            "binding": {
+              "kind": "primitive",
+              "deviceClass": "resistor"
+            },
+            "parameters": {
+              "value": "1k"
+            }
+          }
+        }
+      ],
+      "nets": [
+        {
+          "id": "nplus",
+          "terminals": [
+            { "instanceId": "v1", "pinName": "+" },
+            { "instanceId": "r1", "pinName": "1" }
+          ]
+        },
+        {
+          "id": "n0",
+          "terminals": [
+            { "instanceId": "r1", "pinName": "2" }
+          ]
+        }
+      ],
+      "connectivityEvidence": [
+        {
+          "id": "hint0",
+          "kind": "net-name-hint",
+          "netId": "n0",
+          "sourceName": "0",
+          "origin": "legacy-explicit-net-property"
+        },
+        {
+          "id": "hintp",
+          "kind": "net-name-hint",
+          "netId": "nplus",
+          "sourceName": "VIN",
+          "origin": "legacy-explicit-net-property"
+        }
+      ],
+      "routes": [],
+      "junctions": [],
+      "annotations": [],
+      "presentation": {
+        "styleProfileId": "default",
+        "grid": 10,
+        "compactness": "normal"
+      },
+      "layoutGroups": [],
+      "constraints": [],
+      "noConnects": []
+    }
+  ],
+  "simulationSetups": []
+}

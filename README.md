@@ -7,6 +7,16 @@ Public GitHub Pages host for the Vite schematic editor
 
 ## Develop
 
+This repository is the deployable Pages shell; the editor source is kept in
+the sibling private workspace referenced below. You can still validate the
+checked-in site and Worker changes without that workspace:
+
+```bash
+npm install
+npm test
+npm run verify:site
+```
+
 ```bash
 cd /mnt/d/proj/analog-canvas-js   # or spice-simulator-editor after rename
 pnpm install
@@ -29,6 +39,17 @@ cd /mnt/d/proj/spice-simulator
 | `scripts/publish-editor-pages.sh` | Build + commit `site/` |
 | `scripts/release.sh` | Semver tag + GitHub Release |
 | `docs/` | Dual-repo / lab notes |
+
+Trust and data-boundary checks are documented in
+[`docs/PHASE1_STATUS.md`](docs/PHASE1_STATUS.md) and
+[`docs/DATA_STATES.md`](docs/DATA_STATES.md). The checked-in shell can validate
+the public bundle, release metadata, project round trips, ERC, and netlist
+goldens; the private editor source is required to regenerate the UI.
+
+`npm run release:dry` and the publish script are intended for WSL because the
+source build uses `pnpm` and Bash. `scripts/publish-editor-pages.sh --no-push`
+now performs the full build and local commit without contacting the remote;
+use `--dry-run` to skip both commit and push.
 
 Legacy vanilla MNA simulator code has been removed from this repository.
 

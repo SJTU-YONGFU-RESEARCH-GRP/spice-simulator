@@ -13,6 +13,12 @@ Private Cloudflare Worker used by the editor when the user opts in to
 
 Target repo: `SJTU-YONGFU-RESEARCH-GRP/spice-simulator-lab` (private).
 
+The worker rejects browser requests whose `Origin` is not listed in
+`ALLOW_ORIGIN`, caps request bodies at 256 KiB, and bounds user-controlled
+issue fields. Keep `ALLOW_ORIGIN` set to an exact origin (never `*`) in
+production. For local testing, add the specific development origin as a
+comma-separated value.
+
 ## Setup
 
 ```bash

@@ -13,9 +13,16 @@
 
 const SCHEMA = "spice_icproj_share_v1";
 const ISSUE_BODY_SOFT_LIMIT = 55_000;
+const REQUEST_BODY_LIMIT = 256_000;
+const MAX_NAME_LENGTH = 120;
+const MAX_DESCRIPTION_LENGTH = 4_000;
+const MAX_TRIGGER_LENGTH = 32;
 
-function corsHeaders(env) {
-  const origin = env.ALLOW_ORIGIN || "*";
+function corsHeaders(env, requestOrigin) {
+  const origins = allowedOrigins(env);
+  const origin = requestOrigin && origins.includes(requestOrigin)
+    ? requestOrigin
+    : (origins[0] || "*");
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -23,15 +30,47 @@ function corsHeaders(env) {
   };
 }
 
-function json(data, status, env) {
+function json(data, status, env, requestOrigin) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
-      ...corsHeaders(env),
+      ...corsHeaders(env, requestOrigin),
     },
   });
+}
+
+function allowedOrigins(env) {
+  return String(
+    env.ALLOW_ORIGIN || "https://sjtu-yongfu-research-grp.github.io",
+  )
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+function isAllowedOrigin(request, env) {
+  const origin = request.headers.get("Origin");
+  // Non-browser callers do not send Origin. Keep health checks and server-side
+  // integrations working, while browser requests must match the allow-list.
+  return !origin || allowedOrigins(env).includes("*") || allowedOrigins(env).includes(origin);
+}
+
+function oneLineText(value, maxLength, fallback = "") {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.replace(/[\r\n]+/gu, " ").trim();
+  return normalized.slice(0, maxLength);
+}
+
+function fencedJson(value) {
+  const source = JSON.stringify(value, null, 2);
+  const longestRun = Math.max(
+    0,
+    ...Array.from(source.matchAll(/`+/gu), (match) => match[0].length),
+  );
+  const fence = "`".repeat(Math.max(3, longestRun + 1));
+  return [(`${fence}json`), source, fence];
 }
 
 async function sha256Hex(text) {
@@ -68,7 +107,7 @@ function formatIssueMarkdown(payload) {
         "Project omitted (too large). Attach `*.icproj.json` manually.",
     );
   } else {
-    lines.push("```json", JSON.stringify(payload.project, null, 2), "```");
+    lines.push(...fencedJson(payload.project));
   }
   lines.push("");
   return lines.join("\n");
@@ -107,58 +146,79 @@ async function github(env, path, init = {}) {
 }
 
 async function handlePost(request, env) {
-  let incoming;
-  try {
-    incoming = await request.json();
-  } catch {
-    return json({ ok: false, error: "Invalid JSON" }, 400, env);
+  const requestOrigin = request.headers.get("Origin") || undefined;
+  const respond = (data, status) => json(data, status, env, requestOrigin);
+  if (!isAllowedOrigin(request, env)) {
+    return respond({ ok: false, error: "Origin not allowed" }, 403);
   }
 
-  if (incoming?.schema !== SCHEMA) {
-    return json({ ok: false, error: "Unsupported schema" }, 400, env);
+  const contentLength = Number(request.headers.get("Content-Length") || 0);
+  if (contentLength > REQUEST_BODY_LIMIT) {
+    return respond({ ok: false, error: "Request body is too large" }, 413);
   }
-  if (incoming?.consent !== true) {
-    return json({ ok: false, error: "Consent required" }, 400, env);
+
+  let incoming;
+  try {
+    const raw = await request.text();
+    if (new TextEncoder().encode(raw).byteLength > REQUEST_BODY_LIMIT) {
+      return respond({ ok: false, error: "Request body is too large" }, 413);
+    }
+    incoming = JSON.parse(raw);
+  } catch {
+    return respond({ ok: false, error: "Invalid JSON" }, 400);
+  }
+
+  if (!incoming || typeof incoming !== "object" || Array.isArray(incoming)) {
+    return respond({ ok: false, error: "Payload must be a JSON object" }, 400);
+  }
+  if (incoming.schema !== SCHEMA) {
+    return respond({ ok: false, error: "Unsupported schema" }, 400);
+  }
+  if (incoming.consent !== true) {
+    return respond({ ok: false, error: "Consent required" }, 400);
   }
   if (!incoming.project && !incoming.oversized) {
-    return json({ ok: false, error: "Missing project" }, 400, env);
+    return respond({ ok: false, error: "Missing project" }, 400);
+  }
+  if (incoming.project !== undefined && incoming.project !== null &&
+      (typeof incoming.project !== "object" || Array.isArray(incoming.project))) {
+    return respond({ ok: false, error: "Project must be a JSON object" }, 400);
   }
 
   const ip = request.headers.get("CF-Connecting-IP") || "";
   if (!ip) {
-    return json(
+    return respond(
       { ok: false, error: "Could not resolve client address" },
       400,
-      env,
     );
   }
   const salt = env.IP_HASH_SALT || "";
   if (!salt) {
-    return json({ ok: false, error: "IP_HASH_SALT is not configured" }, 500, env);
+    return respond({ ok: false, error: "IP_HASH_SALT is not configured" }, 500);
   }
 
   const actorKey = await sha256Hex(`${salt}:${ip}`);
   const actorShort = actorKey.slice(0, 16);
 
-  const name =
-    typeof incoming.name === "string" && incoming.name.trim()
-      ? incoming.name.trim()
-      : "Untitled circuit";
+  const name = oneLineText(incoming.name, MAX_NAME_LENGTH, "Untitled circuit") || "Untitled circuit";
   const projectJson = incoming.project ? JSON.stringify(incoming.project) : "";
+  const reportedProjectBytes = Number(incoming.projectBytes);
   const projectBytes =
-    typeof incoming.projectBytes === "number"
-      ? incoming.projectBytes
-      : projectJson.length;
+    Number.isFinite(reportedProjectBytes) && reportedProjectBytes >= 0
+      ? reportedProjectBytes
+      : new TextEncoder().encode(projectJson).byteLength;
   const oversized =
     Boolean(incoming.oversized) || projectBytes > ISSUE_BODY_SOFT_LIMIT;
 
   const payload = {
     schema: SCHEMA,
     name,
-    description:
-      typeof incoming.description === "string" ? incoming.description : "",
-    createdAt: incoming.createdAt || new Date().toISOString(),
-    trigger: incoming.trigger || "save",
+    description: oneLineText(incoming.description, MAX_DESCRIPTION_LENGTH),
+    createdAt:
+      typeof incoming.createdAt === "string" && !Number.isNaN(Date.parse(incoming.createdAt))
+        ? incoming.createdAt
+        : new Date().toISOString(),
+    trigger: oneLineText(incoming.trigger, MAX_TRIGGER_LENGTH, "save") || "save",
     project: oversized ? null : incoming.project,
     projectBytes,
     oversized,
@@ -172,7 +232,7 @@ async function handlePost(request, env) {
   const owner = env.GITHUB_OWNER;
   const repo = env.GITHUB_REPO;
   if (!owner || !repo) {
-    return json({ ok: false, error: "GITHUB_OWNER/REPO not set" }, 500, env);
+    return respond({ ok: false, error: "GITHUB_OWNER/REPO not set" }, 500);
   }
 
   let issueNumber = null;
@@ -214,7 +274,7 @@ async function handlePost(request, env) {
     }
   }
 
-  return json(
+  return respond(
     {
       ok: true,
       updated,
@@ -222,14 +282,16 @@ async function handlePost(request, env) {
       issue_url: issue.html_url,
     },
     200,
-    env,
   );
 }
 
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders(env) });
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders(env, request.headers.get("Origin") || undefined),
+      });
     }
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health") {
@@ -243,6 +305,7 @@ export default {
           { ok: false, error: error.message || "Worker error" },
           error.status && error.status < 500 ? error.status : 502,
           env,
+          request.headers.get("Origin") || undefined,
         );
       }
     }

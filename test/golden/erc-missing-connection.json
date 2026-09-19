@@ -1,0 +1,17 @@
+[
+  {
+    "code": "MISSING_PIN_NET",
+    "severity": "error",
+    "documentId": "document-top",
+    "objectIds": [
+      "v1"
+    ],
+    "primary": {
+      "documentId": "document-top",
+      "hierarchyPath": [],
+      "kind": "instance",
+      "objectId": "v1"
+    },
+    "message": "Required pin V1.- is not connected to an exportable Net"
+  }
+]

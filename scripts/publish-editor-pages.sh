@@ -13,6 +13,28 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DRY_RUN=0
+NO_PUSH=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=1 ;;
+    --no-push) NO_PUSH=1 ;;
+    -h|--help)
+      sed -n '2,12p' "$0"
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $arg" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "Dry run — no editor build, site copy, commit, or push."
+  exit 0
+fi
 
 # WSL often starts with apt Node 12 on PATH; prefer nvm Node 24 + corepack pnpm.
 ensure_pnpm() {
@@ -95,7 +117,8 @@ printf '%s\n' "{
   \"app\": \"spice-schematic-editor\",
   \"source\": \"spice-simulator\",
   \"base\": \"/spice-simulator/\",
-  \"builtAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+  \"builtAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+  \"versionSource\": \"package.json\"
 }" > "$ROOT/site/release-manifest.json"
 
 git add site .github/workflows/pages.yml
@@ -105,11 +128,9 @@ else
   git commit -m "Publish schematic editor to Pages (replace legacy simulator UI)"
 fi
 
-# Prefer SSH from WSL
-remote_url="$(git remote get-url origin)"
-if [[ "$remote_url" == https://github.com/* ]]; then
-  git remote set-url origin "git@github.com:${remote_url#https://github.com/}"
-  git remote set-url origin "$(git remote get-url origin | sed 's#/$##;s#\.git$#.git#')"
+if [[ "$NO_PUSH" -eq 1 ]]; then
+  echo "Skipping push (--no-push)."
+  exit 0
 fi
 
 git push origin HEAD

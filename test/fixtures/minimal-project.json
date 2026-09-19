@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 47,
+  "id": "project-fixture",
+  "name": "Minimal round-trip fixture",
+  "source": {
+    "entry": null,
+    "dialect": "spice",
+    "sourcePolicy": "copy",
+    "files": []
+  },
+  "symbolLibrary": {
+    "id": "builtin",
+    "version": "fixture",
+    "hash": "fixture-hash"
+  },
+  "structureRevision": 1,
+  "topDocumentId": "document-top",
+  "documents": [
+    {
+      "id": "document-top",
+      "name": "Top",
+      "revision": 0,
+      "sourceStatus": "in-sync",
+      "instances": [],
+      "nets": [],
+      "connectivityEvidence": [],
+      "routes": [],
+      "junctions": [],
+      "annotations": [],
+      "presentation": {
+        "styleProfileId": "default",
+        "grid": 10,
+        "compactness": "normal"
+      },
+      "layoutGroups": [],
+      "constraints": [],
+      "noConnects": []
+    }
+  ],
+  "simulationSetups": []
+}
