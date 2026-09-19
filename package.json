@@ -7,6 +7,7 @@
   "description": "SPICE schematic editor Pages publish repo",
   "scripts": {
     "check:artifacts": "node scripts/check-artifacts.mjs",
+    "patch:jsx": "node scripts/patch-jsx-callsites.mjs",
     "publish:editor": "bash scripts/publish-editor-pages.sh",
     "release": "bash scripts/release.sh",
     "release:dry": "bash scripts/release.sh --dry-run"

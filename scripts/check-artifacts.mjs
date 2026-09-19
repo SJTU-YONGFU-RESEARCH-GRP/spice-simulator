@@ -33,7 +33,12 @@
  *                   to a Project, not only on the route that lists examples.
  *                   The resolver is lifted out of the bundle and run against
  *                   the bundle's own table. See checkExampleGate.
- *   8. (meta)       Accepted deviations that matched nothing. Printed only when
+ *   8. jsxCallSites No JSX call site may be emitted as `(void 0)(` -- the
+ *                   factory folded to undefined with its arguments left in
+ *                   place. The file looks intact and the runtime chunk passes
+ *                   check 6; only the branch that renders the broken site
+ *                   fails. See checkJsxCallSites.
+ *   9. (meta)       Accepted deviations that matched nothing. Printed only when
  *                   there are any, and never silenceable.
  *
  * The rule in (1) is deliberately narrow: a reference is reported only when
@@ -642,6 +647,85 @@ function checkExampleGate(site) {
 }
 
 /**
+ * Check 8: no JSX call site may be compiled to `(void 0)(`.
+ *
+ * On 2026-09-19 the shipped artifact contained 31 call sites emitted as
+ *
+ *     (void 0)(T, "div", { ... }, key, isStatic, {fileName, lineNumber}, this)
+ *
+ * -- the factory expression folded to `undefined` while its seven arguments
+ * were left in place. Nothing about the file looks broken: the import is
+ * intact, the runtime chunk exports a working factory (check 6 passes), and
+ * the site's landing page renders, because 1900-odd sibling call sites in the
+ * very same file are fine. The 31 broken ones sit in branches that render
+ * later -- 28 of them in the simulation surface, so pressing Run threw
+ * `TypeError: (void 0) is not a function` and took the application down.
+ *
+ * This check looks for the emitted shape directly. A `(void 0)(` whose
+ * arguments carry the dev-transform source object is reported as a JSX site;
+ * any other `(void 0)(` is reported too, because there is no callable value
+ * that this expression could legitimately be -- but it is counted separately
+ * so the two can never be confused.
+ *
+ * Repair: scripts/patch-jsx-callsites.mjs.
+ */
+const VOID_CALL = '(void 0)(';
+const JSX_SOURCE_OBJECT = /\{fileName:\s*[A-Za-z_$][\w$]*\s*,\s*lineNumber:\s*\d+/;
+
+function jsFilesUnder(root) {
+  const out = [];
+  (function walk(dir) {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (extname(e.name) === '.js') out.push(p);
+    }
+  })(root);
+  return out.sort();
+}
+
+function checkJsxCallSites(site) {
+  const findings = [];
+  let scanned = 0;
+  // Scope: assets/ only. JSX call sites are emitted by the bundler, so they can
+  // only appear in application chunks. Scanning the whole tree would also read
+  // hand-maintained files such as sw.js, whose *comments* legitimately quote the
+  // string -- and there is no safe way to strip comments from a single-line
+  // minified chunk without also cutting code.
+  const assets = join(site, 'assets');
+  if (!existsSync(assets)) return { scanned: 0, findings, noAssets: true };
+  for (const path of jsFilesUnder(assets)) {
+    const text = readText(path);
+    if (text === null) continue;
+    scanned++;
+    const rel = slash(path.slice(site.length + 1));
+    let jsx = 0;
+    let other = 0;
+    let at = 0;
+    for (;;) {
+      const i = text.indexOf(VOID_CALL, at);
+      if (i === -1) break;
+      if (JSX_SOURCE_OBJECT.test(text.slice(i, i + 400))) jsx++;
+      else other++;
+      at = i + VOID_CALL.length;
+    }
+    if (jsx === 0 && other === 0) continue;
+    const notes = [];
+    if (jsx > 0) {
+      notes.push(jsx + ' JSX call site(s) emitted as (void 0)( -- the first render of that' +
+        ' branch throws TypeError: (void 0) is not a function');
+      notes.push('repair: node scripts/patch-jsx-callsites.mjs');
+    }
+    if (other > 0) {
+      notes.push(other + ' further (void 0)( call(s) without the dev-transform signature --' +
+        ' also uncallable, but not provably JSX');
+    }
+    findings.push({ key: 'jsx-void0:' + rel, ref: rel, notes });
+  }
+  return { scanned, findings };
+}
+
+/**
  * Render a keyed finding list, separating accepted deviations from live ones.
  *
  * An accepted entry is deliberately still printed. The point of the list is
@@ -742,6 +826,7 @@ async function main() {
 
   const jsxFactory = await checkJsxFactory(site);
   const gate = checkExampleGate(site);
+  const jsxSites = checkJsxCallSites(site);
   const jsxFactoryList = jsxFactory
     .filter((r) => r.failures.length > 0)
     .map((r) => ({
@@ -758,7 +843,10 @@ async function main() {
   // covers a whole class; an entry that matches nothing becomes a finding of
   // its own, so an acceptance cannot quietly outlive its deviation.
   const matched = new Set();
-  const lists = [escapedList, missingList, externalList, jsxList, shellList, jsxFactoryList];
+  const lists = [
+    escapedList, missingList, externalList, jsxList, shellList, jsxFactoryList,
+    jsxSites.findings,
+  ];
   for (const list of lists) {
     for (const f of list) {
       const hit = acceptEntries.find((e) =>
@@ -827,9 +915,23 @@ async function main() {
     push(...render(gate.findings, 'the unlock gate does not hold', null, () => false));
   }
 
+  push('');
+  push('8. JSX call sites compiled to (void 0)');
+  push('   (a factory folded to undefined; imports and check 6 stay green)');
+  if (jsxSites.noAssets) {
+    push('  --  no assets/ in this tree');
+  } else if (jsxSites.scanned === 0) {
+    push('  --  no .js in this tree');
+  } else if (jsxSites.findings.length === 0) {
+    push('  ok  ' + jsxSites.scanned + ' chunk(s): every call site has its factory');
+  } else {
+    push(...render(jsxSites.findings, 'uncallable JSX call sites',
+      'the first render of the affected branch throws TypeError', accepted));
+  }
+
   if (stale.length > 0) {
     push('');
-    push('8. stale accepted deviations');
+    push('9. stale accepted deviations');
     push(...render(stale, 'accepted entries that matched nothing', null, () => false));
   }
 
@@ -857,6 +959,7 @@ async function main() {
       jsxDevRuntimeRefs: [...jsx.referencing].map(([file, counts]) => ({ file, counts })),
       jsxFactoryChunks: jsxFactory.map((r) => ({ chunk: r.rel, failures: r.failures })),
       exampleGate: gate.findings.map((f) => ({ chunk: f.ref, notes: f.notes })),
+      jsxVoid0CallSites: jsxSites.findings.map((f) => ({ chunk: f.ref, notes: f.notes })),
       shellMissing: shell.missing,
       acceptedKeys: [...matched],
       staleAcceptances: stale.map((s) => s.ref),

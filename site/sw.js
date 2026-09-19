@@ -16,7 +16,13 @@
 //   c639654867ce  <- assets/src-CMkpkg0p.js          (base-relative asset paths)
 //   06929bd5df04  <- assets/jsx-dev-runtime-DuB4xY43.js  (ref semantics)
 //   c676f34651bc  <- assets/App-D0jgYDVz.js          (unlock gate on ?example=)
-const CACHE = "icm-static-shell-c676f34651bc";
+//   e334a99451bc  <- assets/spice-simulation-surface-Dua32hSB.js  (28 JSX sites)
+//   9d4063a821ec  <- assets/cell-manager-dialog-DJciZ6wz.js       (2 JSX sites)
+//   1f8cc619d874  <- assets/App-D0jgYDVz.js                       (1 JSX site)
+// The A7 repair of 2026-09-19 patched all three in one pass (31 call sites
+// emitted as `(void 0)(`, uncallable). CACHE takes the surface chunk's digest:
+// that is the one whose failure took the whole application down on Run.
+const CACHE = "icm-static-shell-e334a99451bc";
 
 function scopeUrl() {
   return new URL(self.registration.scope);
