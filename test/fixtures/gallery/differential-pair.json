@@ -1,0 +1,24 @@
+{
+  "contractVersion": 1,
+  "status": "blocked-source-unavailable",
+  "id": "differential-pair",
+  "title": "NMOS differential pair",
+  "description": "Differential input response and common-mode behavior of a matched pair.",
+  "projectFixture": null,
+  "dut": { "id": "dut-differential-pair", "documentId": "document-differential-pair", "name": "Differential pair" },
+  "testbench": {
+    "id": "tb-differential-transient",
+    "groundNode": "0",
+    "inputNode": "VINP",
+    "outputNode": "VOUTP",
+    "analysis": { "type": "tran", "start": "0", "stop": "2m", "step": "2u" }
+  },
+  "models": [
+    { "id": "nmos-level1", "status": "requires-model", "version": "fixture" },
+    { "id": "tail-current-source", "status": "built-in", "version": "fixture" },
+    { "id": "resistor", "status": "built-in", "version": "fixture" }
+  ],
+  "expectedMeasurements": ["VOUTP.peakToPeak", "VOUTM.peakToPeak", "differentialGain"],
+  "deckPreview": "* Contract deck preview: differential-pair\n.include models/nmos-level1.lib\nITAIL TAIL 0 DC 1m\nV1 VINP 0 SIN(0 10m 1k)\nV2 VINM 0 SIN(0 10m 1k 0 0 180)\nM1 VOUTP VINP TAIL 0 nmos-level1\nM2 VOUTM VINM TAIL 0 nmos-level1\n.tran 2u 2m\n.end\n",
+  "applicability": "Demonstrates differential gain and common-mode rejection setup."
+}

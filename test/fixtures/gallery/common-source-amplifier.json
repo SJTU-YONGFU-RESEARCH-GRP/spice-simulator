@@ -1,0 +1,24 @@
+{
+  "contractVersion": 1,
+  "status": "blocked-source-unavailable",
+  "id": "common-source-amplifier",
+  "title": "NMOS common-source amplifier",
+  "description": "Small-signal voltage gain and bias point of a common-source stage.",
+  "projectFixture": null,
+  "dut": { "id": "dut-common-source", "documentId": "document-common-source", "name": "Common-source stage" },
+  "testbench": {
+    "id": "tb-common-source-ac",
+    "groundNode": "0",
+    "inputNode": "VIN",
+    "outputNode": "VOUT",
+    "analysis": { "type": "ac", "start": "10", "stop": "1Meg", "points": "dec 20" }
+  },
+  "models": [
+    { "id": "nmos-level1", "status": "requires-model", "version": "fixture" },
+    { "id": "resistor", "status": "built-in", "version": "fixture" },
+    { "id": "sine-source", "status": "built-in", "version": "fixture" }
+  ],
+  "expectedMeasurements": ["VOUT.gainDb", "VOUT.peakToPeak", "bias.vds"],
+  "deckPreview": "* Contract deck preview: common-source-amplifier\n.include models/nmos-level1.lib\nVDD VDD 0 5\nVIN VIN 0 AC 1\nRD VDD VOUT 10k\nM1 VOUT VIN 0 0 nmos-level1\n.ac dec 20 10 1Meg\n.end\n",
+  "applicability": "Demonstrates transistor biasing and voltage gain."
+}

@@ -1,0 +1,24 @@
+{
+  "contractVersion": 1,
+  "status": "blocked-source-unavailable",
+  "id": "cmos-inverter",
+  "title": "CMOS inverter",
+  "description": "Complementary MOS inverter transfer characteristic and delay setup.",
+  "projectFixture": null,
+  "dut": { "id": "dut-cmos-inverter", "documentId": "document-cmos-inverter", "name": "CMOS inverter" },
+  "testbench": {
+    "id": "tb-cmos-dc",
+    "groundNode": "0",
+    "inputNode": "VIN",
+    "outputNode": "VOUT",
+    "analysis": { "type": "dc", "source": "VIN", "start": "0", "stop": "5", "step": "0.01" }
+  },
+  "models": [
+    { "id": "nmos-level1", "status": "requires-model", "version": "fixture" },
+    { "id": "pmos-level1", "status": "requires-model", "version": "fixture" },
+    { "id": "vdd-source", "status": "built-in", "version": "fixture" }
+  ],
+  "expectedMeasurements": ["VOUT.highLevel", "VOUT.lowLevel", "VOUT.switchingPoint"],
+  "deckPreview": "* Contract deck preview: cmos-inverter\n.include models/cmos-level1.lib\nVDD VDD 0 5\nVIN VIN 0 0\nMPL VOUT VIN VDD VDD pmos-level1\nMNL VOUT VIN 0 0 nmos-level1\n.dc VIN 0 5 0.01\n.end\n",
+  "applicability": "Demonstrates logic threshold and rail-to-rail behavior."
+}

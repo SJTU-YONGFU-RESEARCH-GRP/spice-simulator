@@ -46,6 +46,11 @@ Trust and data-boundary checks are documented in
 the public bundle, release metadata, project round trips, ERC, and netlist
 goldens; the private editor source is required to regenerate the UI.
 
+The source-independent Phase 2 workflow contract and Gallery case definitions
+are in [`docs/PHASE2_WORKFLOW_CONTRACT.md`](docs/PHASE2_WORKFLOW_CONTRACT.md).
+They are validated by `npm run test:workflow-contract`, but remain marked
+`blocked-source-unavailable` until the editor source is supplied.
+
 `npm run release:dry` and the publish script are intended for WSL because the
 source build uses `pnpm` and Bash. `scripts/publish-editor-pages.sh --no-push`
 now performs the full build and local commit without contacting the remote;

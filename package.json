@@ -11,6 +11,7 @@
     "test:project": "node --test scripts/project-roundtrip.test.mjs",
     "test:netlist": "node --test scripts/erc-netlist.test.mjs",
     "test:release-scripts": "node --test scripts/release-scripts.test.mjs",
+    "test:workflow-contract": "node --test scripts/workflow-contract.test.mjs",
     "verify:site": "node scripts/verify-site.mjs",
     "publish:editor": "bash scripts/publish-editor-pages.sh",
     "release": "bash scripts/release.sh",

@@ -1,0 +1,24 @@
+{
+  "contractVersion": 1,
+  "status": "blocked-source-unavailable",
+  "id": "rc-lowpass",
+  "title": "RC low-pass filter",
+  "description": "First-order low-pass response for learning cutoff frequency and transient settling.",
+  "projectFixture": null,
+  "dut": { "id": "dut-rc", "documentId": "document-rc", "name": "RC filter" },
+  "testbench": {
+    "id": "tb-rc-transient",
+    "groundNode": "0",
+    "inputNode": "VIN",
+    "outputNode": "VOUT",
+    "analysis": { "type": "tran", "start": "0", "stop": "10m", "step": "10u" }
+  },
+  "models": [
+    { "id": "resistor", "status": "built-in", "version": "fixture" },
+    { "id": "capacitor", "status": "built-in", "version": "fixture" },
+    { "id": "pulse-source", "status": "built-in", "version": "fixture" }
+  ],
+  "expectedMeasurements": ["VOUT.peakToPeak", "VOUT.riseTime"],
+  "deckPreview": "* Contract deck preview: rc-lowpass\nV1 VIN 0 PULSE(0 1 0 1u 1u 5m 10m)\nR1 VIN VOUT 1k\nC1 VOUT 0 100n\n.tran 10u 10m\n.end\n",
+  "applicability": "Demonstrates cutoff frequency and transient behavior."
+}
