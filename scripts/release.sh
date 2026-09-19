@@ -7,11 +7,42 @@
 #   ./scripts/release.sh 0.3.0 --no-push
 #
 # By default refreshes ./site from the editor source tree (SKIP_BUILD=1 to skip).
+#
+# --no-push suppresses every push this script makes, including the one inside
+# the publish step it invokes, so a release is never pushed from two places.
+#
+# site/ must pass scripts/check-artifacts.mjs before it is committed, unless
+# SKIP_ARTIFACT_GUARD=1. A rebuild also refuses to delete a site/ that has
+# uncommitted changes unless ALLOW_DIRTY_SITE=1.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+
+REMOTE="${RELEASE_REMOTE:-origin}"
+DRY_RUN=0
+NO_PUSH=0
+BUMP="patch"
+
+# Parse arguments before ensure_pnpm, so --help and --dry-run work without a
+# package manager. Otherwise corepack silently downloads one just to print help.
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=1 ;;
+    --no-push) NO_PUSH=1 ;;
+    patch|minor|major) BUMP="$arg" ;;
+    [0-9]*.[0-9]*.[0-9]*) BUMP="$arg" ;;
+    -h|--help)
+      sed -n '2,17p' "$0"
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $arg" >&2
+      exit 1
+      ;;
+  esac
+done
 
 # WSL often starts with apt Node 12 on PATH; prefer nvm Node 24 + corepack pnpm.
 ensure_pnpm() {
@@ -45,28 +76,6 @@ if [[ -z "$(git config user.email 2>/dev/null || true)" ]]; then
   export GIT_AUTHOR_EMAIL="${GIT_AUTHOR_EMAIL:-noreply@users.noreply.github.com}"
   export GIT_COMMITTER_EMAIL="${GIT_COMMITTER_EMAIL:-$GIT_AUTHOR_EMAIL}"
 fi
-
-REMOTE="${RELEASE_REMOTE:-origin}"
-DRY_RUN=0
-NO_PUSH=0
-BUMP="patch"
-
-for arg in "$@"; do
-  case "$arg" in
-    --dry-run) DRY_RUN=1 ;;
-    --no-push) NO_PUSH=1 ;;
-    patch|minor|major) BUMP="$arg" ;;
-    [0-9]*.[0-9]*.[0-9]*) BUMP="$arg" ;;
-    -h|--help)
-      sed -n '2,12p' "$0"
-      exit 0
-      ;;
-    *)
-      echo "Unknown argument: $arg" >&2
-      exit 1
-      ;;
-  esac
-done
 
 current="$(node --input-type=commonjs -e "console.log(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")"
 if [[ "$BUMP" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -114,8 +123,9 @@ EOF
 printf '%s\n' "$next" > VERSION
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
-  bash scripts/publish-editor-pages.sh --no-push 2>/dev/null || {
-    # publish script always pushes; rebuild site inline instead
+  bash scripts/publish-editor-pages.sh --no-push || {
+    # The publish script owns the rebuild. This is the stand-in for when it
+    # cannot run at all, and it applies the same two safety gates.
     EDITOR_ROOT="${EDITOR_ROOT:-}"
     if [[ -z "$EDITOR_ROOT" || ! -d "$EDITOR_ROOT/apps/editor" ]]; then
       for c in \
@@ -132,6 +142,17 @@ if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
     fi
     if [[ -d "$EDITOR_ROOT/apps/editor" ]]; then
       (cd "$EDITOR_ROOT" && pnpm --filter @icm/editor run build:pages)
+      # Same refusal as the publish script: uncommitted work in site/ has no
+      # other copy, and the next line deletes the directory outright.
+      dirty_site="$(git -C "$ROOT" status --porcelain -- site || true)"
+      if [[ -n "$dirty_site" && "${ALLOW_DIRTY_SITE:-0}" != "1" ]]; then
+        {
+          echo "Refusing to rebuild: site/ has uncommitted changes that 'rm -rf site' would destroy."
+          printf '%s\n' "$dirty_site"
+          echo "Commit or stash them first; ALLOW_DIRTY_SITE=1 discards them on purpose."
+        } >&2
+        exit 1
+      fi
       rm -rf site
       mkdir -p site
       cp -a "$EDITOR_ROOT/apps/editor/dist"/. site/
@@ -157,6 +178,18 @@ m.version = "$next";
 m.homepage = "$PUBLIC_URL";
 fs.writeFileSync("site/release-manifest.json", JSON.stringify(m, null, 2) + "\n");
 EOF
+fi
+
+# Last gate before anything reaches git. Whatever is in site/ right now is what
+# ships, and this is the only gate the SKIP_BUILD=1 and fallback-rebuild paths
+# pass through -- SKIP_BUILD=1 is how a hand-edited site/ would be released.
+if [[ "${SKIP_ARTIFACT_GUARD:-0}" == "1" ]]; then
+  echo "WARN: SKIP_ARTIFACT_GUARD=1 — releasing site/ without the artifact guard." >&2
+else
+  node scripts/check-artifacts.mjs --accept=scripts/known-deviations.json || {
+    echo "Artifact guard failed — refusing to commit or push site/." >&2
+    exit 1
+  }
 fi
 
 git add -A

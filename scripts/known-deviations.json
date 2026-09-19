@@ -1,0 +1,16 @@
+{
+  "$comment": "Findings that are known, attributable and accepted. The guard still prints every one of them together with its reason and tracker; they only stop failing the run. An entry that matches nothing in the tree is itself reported as a finding, so this list cannot outlive the deviation it describes. Keys are exact matches, or a prefix when they end in '*'.",
+  "$scope": "These two entries accept the *shape* of the artifact -- that it ships a development JSX runtime and imports it by name. They deliberately do NOT accept anything about whether that runtime works: check 5 (jsxFactory) imports and calls the chunk on every run, so a regression to React's `jsxDEV = void 0` production stub still fails the build.",
+  "accepted": [
+    {
+      "key": "jsx-dev-file:*",
+      "reason": "the artifact ships a development JSX runtime (jsxDEV) in a chunk named jsx-dev-runtime-*.js; the editor source that would emit jsx-runtime is not present in any public repository (docs/REPO_LAYOUT.md:17). The chunk's body was hand-repaired on 2026-09-19 to React's production element semantics (ref kept on props); the real fix is a build-config change in that private editor checkout.",
+      "tracked": "P0-2 / A3"
+    },
+    {
+      "key": "jsx-ref:*",
+      "reason": "same single deviation: every chunk compiled against the development JSX transform imports that chunk by name",
+      "tracked": "P0-2 / A3"
+    }
+  ]
+}

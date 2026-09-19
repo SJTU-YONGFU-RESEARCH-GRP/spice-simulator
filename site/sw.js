@@ -3,7 +3,20 @@
 // Replaced by the Vite build with a digest of the emitted index.html. This
 // changes when its content-hashed application asset graph changes, allowing
 // activate() to remove the prior shell instead of retaining it indefinitely.
-const CACHE = "icm-static-shell-b375bdbe6cb3";
+//
+// Manual bumps (2026-09-19). Assets are cached by URL and served without
+// revalidation -- the shell list at install time, and any same-origin
+// script/style/image/font/manifest on first fetch -- so a hand-patch that keeps
+// its filename is invisible to every returning client for as long as this
+// constant lives. Bumping it is the only thing that can retire the stale copy:
+// activate() drops every "icm-static-shell-*" cache but this one, and the
+// runtime fetches were written into this same bucket. App-*.js is only ever
+// reached through that second route, not through shellUrls().
+// Value: first 12 hex digits of the most recently patched asset's SHA-256.
+//   c639654867ce  <- assets/src-CMkpkg0p.js          (base-relative asset paths)
+//   06929bd5df04  <- assets/jsx-dev-runtime-DuB4xY43.js  (ref semantics)
+//   c676f34651bc  <- assets/App-D0jgYDVz.js          (unlock gate on ?example=)
+const CACHE = "icm-static-shell-c676f34651bc";
 
 function scopeUrl() {
   return new URL(self.registration.scope);

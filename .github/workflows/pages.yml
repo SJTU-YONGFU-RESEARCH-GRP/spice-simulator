@@ -23,8 +23,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Verify editor site bundle
         run: test -f site/index.html && test -d site/assets
+      # site/ is a checked-in build artifact, so this workflow is the last place
+      # that can catch a dead reference before users hit it. The guard resolves
+      # every root-absolute literal the artifact emits against the deployed
+      # base, and rejects a development JSX runtime in a production bundle.
+      # The same check runs locally as: node scripts/check-artifacts.mjs
+      #
+      # Deviations that are known and attributable live in
+      # scripts/known-deviations.json. They are printed with their reason, never
+      # silently skipped, and an entry that stops matching is reported as a
+      # finding -- so the list cannot outlive what it describes.
+      - name: Guard published artifact references
+        run: node scripts/check-artifacts.mjs --accept=scripts/known-deviations.json
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
