@@ -192,8 +192,11 @@ else
   }
 fi
 
-git add -A
-git reset -q -- .cursor 2>/dev/null || true
+# Scope the release commit to the published artifact only. A bare `git add -A`
+# from the repo root would sweep unrelated working-tree changes into the
+# Release commit. The manifest lives inside site/, so this covers everything
+# release.sh actually modifies.
+git add site/
 
 if git diff --cached --quiet; then
   echo "Nothing to commit (already at $next?)."
