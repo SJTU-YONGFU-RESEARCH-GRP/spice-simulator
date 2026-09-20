@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "projectId": "workflow-fixture",
+  "revision": 12,
+  "name": "Workflow fixture",
+  "documents": [{ "id": "document-top", "name": "Top" }],
+  "instances": [{ "id": "r1", "symbolId": "resistor", "reference": "R1" }],
+  "wires": [{ "id": "wire-1", "from": "r1.1", "to": "n1" }],
+  "nets": [{ "id": "n1", "terminals": ["r1.1"] }],
+  "dut": { "id": "dut-main", "documentId": "document-top" },
+  "testbench": { "id": "tb-main", "analysis": { "type": "op" } },
+  "models": [{ "id": "resistor", "status": "built-in" }],
+  "metadata": { "owner": "fixture", "unknownField": { "preserve": true } }
+}

@@ -51,6 +51,11 @@ are in [`docs/PHASE2_WORKFLOW_CONTRACT.md`](docs/PHASE2_WORKFLOW_CONTRACT.md).
 They are validated by `npm run test:workflow-contract`, but remain marked
 `blocked-source-unavailable` until the editor source is supplied.
 
+The verifiable workflow artifact contract (project migration, deterministic
+netlist/provenance, stale-result detection, and result bundles) is documented
+in [`docs/WORKFLOW_ARTIFACTS.md`](docs/WORKFLOW_ARTIFACTS.md) and tested with
+`npm run test:workflow-artifacts`.
+
 `npm run release:dry` and the publish script are intended for WSL because the
 source build uses `pnpm` and Bash. `scripts/publish-editor-pages.sh --no-push`
 now performs the full build and local commit without contacting the remote;

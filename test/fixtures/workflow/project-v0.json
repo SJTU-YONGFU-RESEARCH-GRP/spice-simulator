@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 0,
+  "id": "legacy-workflow-fixture",
+  "name": "Legacy workflow fixture",
+  "documents": [],
+  "metadata": { "legacy": true }
+}
