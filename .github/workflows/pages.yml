@@ -47,6 +47,14 @@ jobs:
       # here, before it can be published.
       - name: Cross-check numeric results against first principles
         run: node scripts/numeric-crosscheck.mjs
+      # A guard that only ever prints PASS proves nothing. This step mutates the
+      # guard itself (a wrong closed-form expectation, a wrong invariant limit)
+      # and the deck (a changed diode ideality factor, i.e. a silently changed
+      # device model) and requires every mutant to go red. It is the automated
+      # form of the project rule "a new check must be shown to fail when the
+      # thing it guards breaks".
+      - name: Prove the numeric guard is not vacuous (mutation test)
+        run: node scripts/numeric-crosscheck.negctl.mjs
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
