@@ -1,6 +1,7 @@
 {
   "$comment": "Findings that are known, attributable and accepted. The guard still prints every one of them together with its reason and tracker; they only stop failing the run. An entry that matches nothing in the tree is itself reported as a finding, so this list cannot outlive the deviation it describes. Keys are exact matches, or a prefix when they end in '*'.",
   "$scope": "These two entries accept the *shape* of the artifact -- that it ships a development JSX runtime and imports it by name. They deliberately do NOT accept anything about whether that runtime works: check 5 (jsxFactory) imports and calls the chunk on every run, so a regression to React's `jsxDEV = void 0` production stub still fails the build.",
+  "$scope2": "The storage-unguarded entries accept the seven remaining unguarded storage reads, all of them on the agent-relay session path. Check 10's six repaired reads (the ones that actually ran during the first render) are NOT accepted -- they are fixed in the artifact and any reappearance is a live finding. See each entry's reason for the reachability argument.",
   "accepted": [
     {
       "key": "jsx-dev-file:*",
@@ -11,6 +12,41 @@
       "key": "jsx-ref:*",
       "reason": "same single deviation: every chunk compiled against the development JSX transform imports that chunk by name",
       "tracked": "P0-2 / A3"
+    },
+    {
+      "key": "storage-unguarded:assets/App-D0jgYDVz.js@665197",
+      "reason": "All seven accepted unguarded storage reads are on the agent-relay session path: they pass bare `window.localStorage` into the relay's own helpers (Jy/qy/Yy), which call removeItem/setItem/getItem on it. Every one sits downstream of a guard on the relay flag (`if(!e.enabled)return`, `if(e.enabled)`) with the session object as the only key (`t.current`). `publicAgentUiEnabled` occurs exactly once in the whole artifact -- as Ux's own prop default `=!1` -- and no caller passes it, so `e.enabled` is false and these branches never execute here; the static Pages deploy also has no `/api/agent/sessions` backend (see docs/REPO_LAYOUT.md: the relay is a separate hosted service). They were deliberately left unpatched rather than hand-fixed: repairing them means rewriting session-token code that this environment cannot exercise end to end, which is a worse trade than a recorded, visible gap. The byte offsets are positions in the build committed at xyp 922b162; a rebuild shifts them, at which point these entries go stale and check 10 reports the sites again for review -- which is the intended behaviour of an acceptance list, not a false alarm.",
+      "tracked": "B9 / agent-relay"
+    },
+    {
+      "key": "storage-unguarded:assets/App-D0jgYDVz.js@665288",
+      "reason": "same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here",
+      "tracked": "B9 / agent-relay"
+    },
+    {
+      "key": "storage-unguarded:assets/App-D0jgYDVz.js@674659",
+      "reason": "same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here",
+      "tracked": "B9 / agent-relay"
+    },
+    {
+      "key": "storage-unguarded:assets/App-D0jgYDVz.js@674940",
+      "reason": "same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here",
+      "tracked": "B9 / agent-relay"
+    },
+    {
+      "key": "storage-unguarded:assets/App-D0jgYDVz.js@677881",
+      "reason": "same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here",
+      "tracked": "B9 / agent-relay"
+    },
+    {
+      "key": "storage-unguarded:assets/App-D0jgYDVz.js@678491",
+      "reason": "same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here",
+      "tracked": "B9 / agent-relay"
+    },
+    {
+      "key": "storage-unguarded:assets/App-D0jgYDVz.js@678870",
+      "reason": "same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here",
+      "tracked": "B9 / agent-relay"
     }
   ]
 }

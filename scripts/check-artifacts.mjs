@@ -47,7 +47,15 @@
  *                   nobody can rebuild" survivable, because a rebuild that adds,
  *                   drops or re-points a network target fails here instead of
  *                   reaching users. See checkOutboundEgress.
- *  10. (meta)       Accepted deviations that matched nothing. Printed only when
+ *  10. storage      Every localStorage/sessionStorage access must sit inside a
+ *                   try/catch. Reading the property throws outright when the
+ *                   browser denies storage (Safari private mode, blocked site
+ *                   data, a partitioned iframe), so an unguarded read is not a
+ *                   lost preference -- it is a throw at that line. On
+ *                   2026-09-20 six such reads sat in React initializers and the
+ *                   error boundary replaced the whole editor with its crash
+ *                   screen. See checkStorageAccess.
+ *  11. (meta)       Accepted deviations that matched nothing. Printed only when
  *                   there are any, and never silenceable.
  *
  * The rule in (1) is deliberately narrow: a reference is reported only when
@@ -925,6 +933,93 @@ function checkOutboundEgress(site, manifestPath) {
 }
 
 /**
+ * A reference to the Web Storage APIs. Both spellings matter: `window.localStorage`
+ * and the bare `localStorage`, because a bare read as an argument -- `Jy(localStorage)`
+ * -- throws at the argument before the callee is ever entered.
+ */
+const STORAGE_REF =
+  /\b(?:window|globalThis|document|self)\s*\.\s*(localStorage|sessionStorage)\b|(?<![\w.$/*'"`\\])(localStorage|sessionStorage)\b/g;
+
+/**
+ * Check 10: every storage access sits inside a try/catch.
+ *
+ * `window.localStorage` is not a plain object property. In Safari private mode,
+ * with site data blocked, or inside a partitioned iframe, *reading the property
+ * itself* throws a SecurityError -- there is no value to test for. So the only
+ * safe shape is a read inside a try whose catch covers it, which is what the
+ * editor already does in thirty of its thirty-six storage reads.
+ *
+ * On 2026-09-20 the six that did not were the ones that mattered: three
+ * localStorage reads and three sessionStorage reads, all evaluated inside React
+ * `useState`/`useEffect` during the first render. With storage denied they threw
+ * during render, the error boundary caught it, and the entire editor was
+ * replaced by "The editor hit an unexpected problem" (42 elements, no SVG, no
+ * UI). The home page and every `?example=` deep link were both dead.
+ *
+ * This check is deliberately about shape, not about the six known sites: any
+ * future unguarded read anywhere in the tree fails, and scripts/storage-resilience.mjs
+ * proves the same property by loading the page in a real browser with the
+ * getters replaced by throwing ones. Neither check can pass by reading a string.
+ *
+ * `indexedDB` is not covered here on purpose: the one user of it in this tree
+ * already does `let r = e.idbFactory ?? globalThis.indexedDB; if (!r) throw ...`,
+ * so a denied IndexedDB is a handled error rather than a raw throw.
+ */
+function checkStorageAccess(site) {
+  const out = { scanned: 0, refs: 0, findings: [] };
+  for (const path of walk(site)) {
+    if (!TEXT_EXT.has(extname(path).toLowerCase())) continue;
+    const text = readText(path);
+    if (text === null) continue;
+    out.scanned += 1;
+    const rel = slash(path.slice(site.length + 1));
+
+    // Ranges of every `try {...}` whose block is immediately followed by
+    // `catch`. Only those can absorb a throw; a bare `try { } finally {}` cannot.
+    const guarded = [];
+    const tryRe = /\btry\s*\{/g;
+    let t;
+    while ((t = tryRe.exec(text)) !== null) {
+      const brace = text.indexOf('{', t.index);
+      const span = balancedSpan(text, brace);
+      if (span.error) {
+        // Cannot certify the region, so say so rather than report its
+        // references as unguarded -- a false accusation is worse than a
+        // "could not check".
+        out.findings.push({
+          key: 'storage-unanalyzable:' + rel + '@' + t.index,
+          ref: rel + '@' + t.index,
+          notes: ['a try block did not brace-balance, so the areas it covers could not be certified'],
+        });
+        continue;
+      }
+      if (/^\s*catch\b/.test(text.slice(span.end + 1))) guarded.push([brace, span.end]);
+    }
+
+    STORAGE_REF.lastIndex = 0;
+    let m;
+    while ((m = STORAGE_REF.exec(text)) !== null) {
+      out.refs += 1;
+      const at = m.index;
+      if (guarded.some(([a, b]) => at >= a && at <= b)) continue;
+      out.findings.push({
+        key: 'storage-unguarded:' + rel + '@' + at,
+        ref: rel + '@' + at,
+        notes: [
+          'reads ' + m[0] + ' outside any try/catch',
+          'when the browser denies storage the read throws, so this line throws',
+          'wrap it in try/catch and fall back to the same default, or route it ' +
+            "through the file's existing safe accessor (an optional chain does " +
+            'NOT help: the property getter throws before "?" applies)',
+          'context: ' + text.slice(Math.max(0, at - 70), at + 70).split('\n').join(' '),
+        ],
+      });
+    }
+  }
+  return out;
+}
+
+/**
  * Render a keyed finding list, separating accepted deviations from live ones.
  *
  * An accepted entry is deliberately still printed. The point of the list is
@@ -1031,6 +1126,7 @@ async function main() {
   const gate = checkExampleGate(site);
   const jsxSites = checkJsxCallSites(site);
   const egress = checkOutboundEgress(site, outboundPath);
+  const storage = checkStorageAccess(site);
   const jsxFactoryList = jsxFactory
     .filter((r) => r.failures.length > 0)
     .map((r) => ({
@@ -1049,7 +1145,7 @@ async function main() {
   const matched = new Set();
   const lists = [
     escapedList, missingList, externalList, jsxList, shellList, jsxFactoryList,
-    jsxSites.findings, egress.findings,
+    jsxSites.findings, egress.findings, storage.findings,
   ];
   for (const list of lists) {
     for (const f of list) {
@@ -1149,9 +1245,24 @@ async function main() {
     for (const n of egress.notes) push('      ' + n);
   }
 
+  push('');
+  push('10. storage access resilience');
+  push('   (reading localStorage/sessionStorage throws outright when the browser ' +
+    'denies storage, so every read needs a try/catch around it)');
+  if (storage.scanned === 0) {
+    push('  --  no text files in this tree');
+  } else if (storage.findings.length === 0) {
+    push('  ok  ' + storage.refs + ' storage reference(s) in ' + storage.scanned +
+      ' file(s), every one inside a try/catch');
+  } else {
+    push(...render(storage.findings, 'unguarded storage access',
+      'the first render of the affected branch throws and the error boundary ' +
+      'replaces the editor', accepted));
+  }
+
   if (stale.length > 0) {
     push('');
-    push('10. stale accepted deviations');
+    push('11. stale accepted deviations');
     push(...render(stale, 'accepted entries that matched nothing', null, () => false));
   }
 
@@ -1180,6 +1291,7 @@ async function main() {
       jsxFactoryChunks: jsxFactory.map((r) => ({ chunk: r.rel, failures: r.failures })),
       exampleGate: gate.findings.map((f) => ({ chunk: f.ref, notes: f.notes })),
       jsxVoid0CallSites: jsxSites.findings.map((f) => ({ chunk: f.ref, notes: f.notes })),
+      storageUnguarded: storage.findings.map((f) => ({ ref: f.ref, notes: f.notes })),
       shellMissing: shell.missing,
       outbound: {
         manifest: outboundPath,

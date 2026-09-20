@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "$comment": "Repairs that keep the committed site/ artifact alive when browser storage is unavailable. site/ is a build artifact whose editor sources are not in any public repository, so a rebuild can reintroduce the unguarded reads and nothing in the tree would notice. Consumed by scripts/check-artifacts.mjs check 10 (every repair must be present) and by scripts/patch-outbound.mjs, which is manifest-generic: it applies whatever repair set the manifest declares, not only outbound ones. Every find string here was sliced out of the committed bytes, not transcribed.",
+  "$how": "Applied with: node scripts/patch-outbound.mjs --manifest=scripts/storage-guard.json (npm run patch:storage).",
+  "targets": [],
+  "repairs": [
+    {
+      "id": "storage-guard-app-chunk",
+      "file": "assets/App-D0jgYDVz.js",
+      "why": "Six storage reads in the editor chunk run outside any try/catch, while the other 30 in the same file are guarded. When the browser denies storage (Safari private mode, blocked site data, a partitioned iframe) the getter itself throws, so the reads throw during render and React's error boundary replaces the whole editor with 'Editor crashed during rendering'. Each edit adds the same try/catch its siblings already have and returns the same default the code already uses.",
+      "edits": [
+        {
+          "find": "(0,L.useState)(()=>{if(typeof window>`u`)return 5;let e=Number(window.localStorage.getItem(`icm.annotation-grid.v1`));return e===1||e===5||e===10?e:5})",
+          "replace": "(0,L.useState)(()=>{try{if(typeof window>`u`)return 5;let e=Number(window.localStorage.getItem(`icm.annotation-grid.v1`));return e===1||e===5||e===10?e:5}catch{return 5}})"
+        },
+        {
+          "find": "(0,L.useState)(()=>{if(typeof window>`u`)return`free`;let e=window.localStorage.getItem(`icm.draw-angle.v1`);return e===`45`||e===`orthogonal`?e:`free`})",
+          "replace": "(0,L.useState)(()=>{try{if(typeof window>`u`)return`free`;let e=window.localStorage.getItem(`icm.draw-angle.v1`);return e===`45`||e===`orthogonal`?e:`free`}catch{return `free`}})"
+        },
+        {
+          "find": "(0,L.useState)(()=>{if(typeof window>`u`)return`auto`;let e=window.localStorage.getItem(`icm.wheel-behavior.v1`);return e===`zoom`||e===`pan`?e:`auto`})",
+          "replace": "(0,L.useState)(()=>{try{if(typeof window>`u`)return`auto`;let e=window.localStorage.getItem(`icm.wheel-behavior.v1`);return e===`zoom`||e===`pan`?e:`auto`}catch{return `auto`}})"
+        },
+        {
+          "find": "let[l]=(0,L.useState)(()=>typeof window<`u`&&window.sessionStorage.getItem(`icm.restore-after-refresh.v1`)===`true`);",
+          "replace": "let[l]=(0,L.useState)(()=>{try{return typeof window<`u`&&window.sessionStorage.getItem(`icm.restore-after-refresh.v1`)===`true`}catch{return!1}});"
+        },
+        {
+          "find": "(0,L.useEffect)(()=>{l&&window.sessionStorage.removeItem(Np)},[l]);",
+          "replace": "(0,L.useEffect)(()=>{if(l)try{window.sessionStorage.removeItem(Np)}catch{}},[l]);"
+        },
+        {
+          "find": "window.sessionStorage.setItem(Np,`true`),window.location.reload()",
+          "replace": "(()=>{try{window.sessionStorage.setItem(Np,`true`)}catch{}})(),window.location.reload()"
+        }
+      ]
+    },
+    {
+      "id": "storage-guard-inline-theme-index",
+      "file": "index.html",
+      "why": "The head inline script reads localStorage to pick the initial theme. It is the first script on the page, so when storage is denied the throw is uncaught, pollutes window.onerror before the app starts, and the theme class is never applied. Wrapping it keeps the exact selection logic.",
+      "edits": [
+        {
+          "find": "    <script>\n      if (\n        localStorage.theme === \"light\" ||\n        (!localStorage.theme &&\n          matchMedia(\"(prefers-color-scheme: light)\").matches)\n      ) {\n        document.documentElement.classList.add(\"light\");\n      }\n    </script>",
+          "replace": "    <script>\n      try {\n        if (\n          localStorage.theme === \"light\" ||\n          (!localStorage.theme &&\n            matchMedia(\"(prefers-color-scheme: light)\").matches)\n        ) {\n          document.documentElement.classList.add(\"light\");\n        }\n      } catch {}\n    </script>"
+        }
+      ]
+    },
+    {
+      "id": "storage-guard-inline-theme-404",
+      "file": "404.html",
+      "why": "The head inline script reads localStorage to pick the initial theme. It is the first script on the page, so when storage is denied the throw is uncaught, pollutes window.onerror before the app starts, and the theme class is never applied. Wrapping it keeps the exact selection logic.",
+      "edits": [
+        {
+          "find": "    <script>\n      if (\n        localStorage.theme === \"light\" ||\n        (!localStorage.theme &&\n          matchMedia(\"(prefers-color-scheme: light)\").matches)\n      ) {\n        document.documentElement.classList.add(\"light\");\n      }\n    </script>",
+          "replace": "    <script>\n      try {\n        if (\n          localStorage.theme === \"light\" ||\n          (!localStorage.theme &&\n            matchMedia(\"(prefers-color-scheme: light)\").matches)\n        ) {\n          document.documentElement.classList.add(\"light\");\n        }\n      } catch {}\n    </script>"
+        }
+      ]
+    }
+  ]
+}

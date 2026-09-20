@@ -41,25 +41,28 @@ checkout or a package install:
 ```bash
 node scripts/check-artifacts.mjs --accept=scripts/known-deviations.json
 node scripts/smoke-test.mjs --require
+node scripts/storage-resilience.mjs --require
 node scripts/numeric-crosscheck.mjs
 node scripts/numeric-crosscheck.negctl.mjs
 node scripts/egress-integrity.mjs
 node scripts/outbound-repair.negctl.mjs
 ```
 
-or `npm run check:artifacts` / `npm run smoke` / `npm run check:numeric` /
-`npm run check:numeric:neg` / `npm run check:egress` / `npm run check:egress:neg`.
+or `npm run check:artifacts` / `npm run smoke` / `npm run check:storage` /
+`npm run check:numeric` / `npm run check:numeric:neg` / `npm run check:egress` /
+`npm run check:egress:neg`.
 
 | Check | Question it answers |
 |---|---|
-| `check-artifacts.mjs` | Is the bundle self-consistent — do its references resolve, is there no development JSX runtime or folded-`undefined` call site, is every network target in the tree classified? |
+| `check-artifacts.mjs` | Is the bundle self-consistent — do its references resolve, is there no development JSX runtime or folded-`undefined` call site, is every network target in the tree classified, is every storage read inside a `try`/`catch`? |
 | `smoke-test.mjs` | Does the editor actually run — does a real simulation finish with zero uncaught errors? |
+| `storage-resilience.mjs` | Does the editor still render in a browser that **denies** storage? Loads the home page and an `?example=` deep link with `localStorage`/`sessionStorage` replaced by throwing getters — the failure mode of Safari private mode, blocked site data and partitioned iframes — and requires the editor, not the crash screen. |
 | `numeric-crosscheck.mjs` | Are the numbers **right** — does the shipped WASM agree with first-principles closed forms and with model-independent invariants (including for BSIM3/BSIM4, which have no closed form)? |
 | `numeric-crosscheck.negctl.mjs` | Would the numeric guard **notice** if it broke? Mutates the guard and the deck and requires every mutant to fail. |
 | `egress-integrity.mjs` | Does the third-party engine fallback actually **verify** what it downloads? Lifts the loader and hash helper out of the shipped chunk and runs them, including a tampered payload that must be refused *and never executed*. |
 | `outbound-repair.negctl.mjs` | Would the outbound checks **notice** if they broke? Nine cases, incl. two controls, against deliberately weakened copies. |
 
-All six run in CI before `site/` is published.
+All seven run in CI before `site/` is published.
 
 Every outbound target the artifact can reach is inventoried in
 `scripts/outbound-manifest.json`, with the evidence that classified it. A URL
@@ -71,7 +74,10 @@ re-deriving the same wrong conclusion.
 
 `node scripts/patch-outbound.mjs` repairs the outbound surface (the public
 feedback link, and the integrity pin on the CDN fallback) and prints the new
-`site/sw.js` cache value; `--check` reports without writing.
+`site/sw.js` cache value; `--check` reports without writing. The script is
+manifest-driven — `--manifest=<file>` applies whatever repair set that file
+declares, which is how the storage guards are applied
+(`npm run patch:storage`, manifest `scripts/storage-guard.json`).
 
 Deviations that are known and attributable live in
 `scripts/known-deviations.json`; they are printed with their reason, never

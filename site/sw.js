@@ -30,7 +30,18 @@
 //                     now verifies the payload against the SHA-256 of the
 //                     engine this repository ships, and refuses to execute on
 //                     mismatch)
-const CACHE = "icm-static-shell-ff20e7487948";
+//   2026-09-20, storage-guard repair (scripts/patch-outbound.mjs with
+//   --manifest=scripts/storage-guard.json, three files):
+//     1aa73603f3ae <- assets/App-D0jgYDVz.js  (B9: six storage reads that ran
+//                     during the first render now sit inside try/catch, so a
+//                     browser that denies storage renders the editor instead
+//                     of the error boundary's crash screen)
+//     a6a953b256fa <- index.html              (the inline theme bootstrap in
+//                     the head is wrapped too; same denial, same throw)
+//     a6a953b256fa <- 404.html                (identical shell, identical fix)
+// CACHE takes the surface chunk's digest again: with storage denied it was
+// App-*.js that took the whole application down on first paint.
+const CACHE = "icm-static-shell-1aa73603f3ae";
 
 function scopeUrl() {
   return new URL(self.registration.scope);

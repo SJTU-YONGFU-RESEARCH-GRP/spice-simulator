@@ -99,3 +99,15 @@ jobs:
         run: node scripts/smoke-test.mjs --require
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # The smoke test runs with working storage. This one loads the same pages
+      # in a browser where reading localStorage/sessionStorage throws -- Safari
+      # private mode, blocked site data, a partitioned iframe -- and requires the
+      # editor to render anyway. On 2026-09-20 six unguarded reads in React
+      # initializers turned that environment into the error boundary's crash
+      # screen: 42 elements, no SVG, no UI, on the home page and on every
+      # ?example= deep link. Static check 10 covers the shape; this covers the
+      # behaviour, and the two fail independently.
+      - name: Storage-denied resilience
+        run: node scripts/storage-resilience.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
