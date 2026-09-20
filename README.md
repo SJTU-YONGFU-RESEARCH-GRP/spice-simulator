@@ -51,12 +51,15 @@ node scripts/csp-conformance.mjs --self-test --require
 node scripts/csp-guard.negctl.mjs
 node scripts/offline-sim.mjs --require
 node scripts/sw-cache.negctl.mjs --static-only
+node scripts/precache-weight.mjs --require
+node scripts/precache-budget.negctl.mjs --static-only
 ```
 
 or `npm run check:artifacts` / `npm run smoke` / `npm run check:storage` /
 `npm run check:numeric` / `npm run check:numeric:neg` / `npm run check:egress` /
 `npm run check:egress:neg` / `npm run check:csp` / `npm run check:csp:neg` /
-`npm run check:offline` / `npm run check:offline:neg:static`.
+`npm run check:offline` / `npm run check:offline:neg:static` /
+`npm run check:precache` / `npm run check:precache:neg:static`.
 
 `npm run preview` serves with `Cache-Control: no-store`, which is what you want
 while editing the artifact but which also stops the service worker from caching
@@ -65,7 +68,7 @@ anything — so a preview cannot tell you whether the worker works. Pass
 
 | Check | Question it answers |
 |---|---|
-| `check-artifacts.mjs` | Is the bundle self-consistent — do its references resolve, is there no development JSX runtime or folded-`undefined` call site, is every network target in the tree classified, is every storage read inside a `try`/`catch`, does the shell still carry its Content-Security-Policy, and does `sw.js` still have the shape its caching needs? |
+| `check-artifacts.mjs` | Is the bundle self-consistent — do its references resolve, is there no development JSX runtime or folded-`undefined` call site, is every network target in the tree classified, is every storage read inside a `try`/`catch`, does the shell still carry its Content-Security-Policy, does `sw.js` still have the shape its caching needs, and does the worker's atomic install payload fit its budget? |
 | `smoke-test.mjs` | Does the editor actually run — does a real simulation finish with zero uncaught errors? |
 | `storage-resilience.mjs` | Does the editor still render in a browser that **denies** storage? Loads the home page and an `?example=` deep link with `localStorage`/`sessionStorage` replaced by throwing getters — the failure mode of Safari private mode, blocked site data and partitioned iframes — and requires the editor, not the crash screen. |
 | `numeric-crosscheck.mjs` | Are the numbers **right** — does the shipped WASM agree with first-principles closed forms and with model-independent invariants (including for BSIM3/BSIM4, which have no closed form)? |
@@ -76,8 +79,11 @@ anything — so a preview cannot tell you whether the worker works. Pass
 | `csp-guard.negctl.mjs` | Would check 11 **notice** if it broke? Twelve cases against mutated copies of the real shell — a missing policy, a hand-edited policy, two shells that disagree, an inline script edited without updating its hash, `'unsafe-eval'`/`'unsafe-inline'`/`*` added to script-src, a dropped directive, an empty document list and an unaudited origin — each required to produce its own finding. |
 | `offline-sim.mjs` | Can the worker do its job? Serves the artifact with deploy-like cache headers, warms a simulation, then turns the network **and** the HTTP cache off — on the page and on the worker — and requires a second simulation to finish. Only Cache Storage can serve the 6.88 MB engine under those conditions. |
 | `sw-cache.negctl.mjs` | Would that test **notice**? Re-introduces the two defects that made the worker cache nothing (a response cloned inside the `caches.open()` callback; the engine unrouted because its `fetch()` has an empty `destination`) and requires **both** channels to catch them: check 12 names each defect, and `offline-sim.mjs` fails. `--static-only` runs just the source-level half, without a browser. |
+| `precache-weight.mjs` | How big is the install payload **in a browser**? `install()` runs `cache.addAll(shellUrls())`, which every first-time visitor downloads in full before the editor works offline — and which aborts the install outright if one member fails. This loads the app, reads the shell cache back, sums what is really stored, compares each entry against its file on disk, and holds the total to `scripts/precache-budget.json`. |
+| `precache-budget.negctl.mjs` | Would the install-budget check **notice**? Three mutants — `logo.png` replaced by a real 512×512 PNG, the 512 px manifest icon re-declared in `shellUrls()`, and a precache target deleted (where `addAll()`'s atomicity aborts the install) — each required to be caught by **both** channels: check 5 names it, and `precache-weight.mjs` fails. `--static-only` runs without a browser. |
 
-All ten run in CI before `site/` is published.
+All of these run in CI: the source-level checks on the deploy job, before `site/`
+is published; the browser checks on the `smoke` job.
 
 Every outbound target the artifact can reach is inventoried in
 `scripts/outbound-manifest.json`, with the evidence that classified it. A URL

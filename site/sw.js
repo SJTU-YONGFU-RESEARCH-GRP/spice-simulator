@@ -66,12 +66,51 @@
 // artifact this repair changed is the worker itself, and a file cannot hash
 // itself. The declaration is the thing that decides what this cache holds.
 // Reproduce with: printf 'vendor/\nmodels/\n' | sha256sum | cut -c1-12
-const CACHE = "icm-static-shell-eb06299c334a";
+//   2026-09-20, precache shrinking (this file and site/logo.png):
+//     4acc26b4ae25 <- site/logo.png  (B5: the install payload was 738.1 KiB, of
+//                     which 735.9 KiB was four images. logo.png alone was
+//                     365,313 B of 558x558 RGBA that the browser draws into a
+//                     176x176 device-pixel box, and icon-512.png was 326,919 B
+//                     that no measured page load ever requested. logo.png is now
+//                     176x176 RGB and icon-512.png has left shellUrls(); the
+//                     list is 105.8 KiB and bounded by
+//                     scripts/precache-budget.json)
+// This bump is not optional even though no asset filename changed: a returning
+// client would otherwise keep serving the 558x558 logo out of its existing
+// cache. Reproduce with: sha256sum site/logo.png | cut -c1-12
+const CACHE = "icm-static-shell-4acc26b4ae25";
 
 function scopeUrl() {
   return new URL(self.registration.scope);
 }
 
+/**
+ * What install() precaches, and the only thing it precaches.
+ *
+ * Every member here is downloaded by every first-time visitor before the worker
+ * can serve anything, because install() runs cache.addAll() and addAll() is
+ * atomic -- one member that fails to fetch aborts the whole install and the
+ * application loses its offline shell entirely. That makes this list a fixed
+ * up-front cost, so it is kept to what the shell actually renders offline:
+ * the document, the manifest, and the three images the page asks for.
+ *
+ * The size of this list is bounded by scripts/precache-budget.json, which
+ * check 5 of scripts/check-artifacts.mjs enforces. Two members had to go to fit:
+ *
+ *   icon-512.png (326,919 B) is named only by manifest.webmanifest. The page
+ *   never renders it, and a browser did not request it across three measured
+ *   page loads -- a cold load, a ?example= deep link, and a reload after a
+ *   simulation -- while it requested icon-192.png on all three. It stays in the
+ *   manifest for the browser to fetch when it wants a 512 px icon; it just does
+ *   not belong in a payload that is paid atomically before first paint.
+ *
+ *   logo.png was 365,313 B of 558x558 RGBA. At device pixel ratio 4 the browser
+ *   draws it into a 176x176 device-pixel box -- the element is 44x44 CSS and the
+ *   other consumer in the stylesheet is a 40x40 mark -- so the source carried
+ *   3.2x more pixels per axis than any supported display can show. It is now
+ *   176x176 RGB at 44,726 B. The file is a committed build product, so a rebuild
+ *   restores the old one, and the budget above is what notices.
+ */
 function shellUrls() {
   const scope = scopeUrl();
   return [
@@ -80,7 +119,6 @@ function shellUrls() {
     new URL("logo.png", scope).toString(),
     new URL("favicon.png", scope).toString(),
     new URL("icon-192.png", scope).toString(),
-    new URL("icon-512.png", scope).toString(),
   ];
 }
 

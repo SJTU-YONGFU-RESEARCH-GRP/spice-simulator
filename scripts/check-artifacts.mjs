@@ -135,11 +135,13 @@ const LITERAL = /(["'`])(\/[A-Za-z0-9._~%+-]+(?:\/[A-Za-z0-9._~%+-]*)*)\1/g;
 const CSS_URL = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s'"]+))\s*\)/g;
 
 const SW_SHELL = /new URL\(\s*"([^"]*)"\s*,\s*scope\s*\)/g;
+/** Bytes as KiB, one decimal. Used wherever a size is reported to a human. */
+const kib = (bytes) => (bytes / 1024).toFixed(1);
 
 function parseArgs(argv) {
   const out = {
     site: join(REPO_ROOT, 'site'), base: null, strict: false, json: null, accept: null,
-    outbound: null, csp: null,
+    outbound: null, csp: null, precache: null,
   };
   for (const arg of argv) {
     // An empty value would silently resolve to the current directory and scan
@@ -151,6 +153,7 @@ function parseArgs(argv) {
     else if (arg.startsWith('--accept=')) out.accept = resolve(REPO_ROOT, arg.slice('--accept='.length));
     else if (arg.startsWith('--outbound=')) out.outbound = resolve(REPO_ROOT, arg.slice('--outbound='.length));
     else if (arg.startsWith('--csp=')) out.csp = resolve(REPO_ROOT, arg.slice('--csp='.length));
+    else if (arg.startsWith('--precache=')) out.precache = resolve(REPO_ROOT, arg.slice('--precache='.length));
     else if (arg.startsWith('--json=')) out.json = arg.slice('--json='.length);
     else return { error: 'unknown argument: ' + arg };
   }
@@ -281,10 +284,32 @@ function checkJsxRuntime(site) {
   return { devFiles, referencing };
 }
 
-/** Check 5: every URL the service worker precaches must exist. */
-function checkShellAssets(site) {
+/**
+ * Check 5: every URL the service worker precaches must exist, and the whole
+ * precache must fit in the install budget.
+ *
+ * The second half matters as much as the first. install() runs
+ * cache.addAll(shellUrls()) before the worker can serve anything, and addAll()
+ * is atomic: every first-time visitor downloads the entire list before the
+ * editor is usable offline, and one member that fails to fetch aborts the whole
+ * install. The list is therefore a fixed up-front cost, and its size is a design
+ * decision -- so the budget in scripts/precache-budget.json is the record of
+ * what that decision was, and this check is what notices when a rebuild quietly
+ * undoes it (site/ is a committed build product; the original 558x558 logo and
+ * the 512 px manifest icon come back with any rebuild).
+ *
+ * Sizes are taken from the files on disk rather than from the wire: that is what
+ * the cache stores, and it is the conservative number, since the deploy
+ * compresses text while the images are already compressed.
+ */
+function checkShellAssets(site, budgetPath) {
   const swPath = join(site, 'sw.js');
-  if (!existsSync(swPath)) return { present: false, missing: [], listed: [] };
+  if (!existsSync(swPath)) {
+    return {
+      present: false, missing: [], listed: [], sizes: [],
+      total: 0, budget: null, overBudget: false,
+    };
+  }
 
   const text = readFileSync(swPath, 'utf8');
   const listed = [];
@@ -295,11 +320,31 @@ function checkShellAssets(site) {
   }
 
   const missing = [];
+  const sizes = [];
+  let total = 0;
   for (const raw of listed) {
     const target = raw === './' ? 'index.html' : raw;
-    if (!existsSync(join(site, target.split('/').join('\\')))) missing.push(raw);
+    const p = join(site, target.split('/').join('\\'));
+    if (!existsSync(p)) { missing.push(raw); continue; }
+    const bytes = statSync(p).size;
+    sizes.push({ raw, bytes });
+    total += bytes;
   }
-  return { present: true, missing, listed };
+
+  let budget = null;
+  if (budgetPath && existsSync(budgetPath)) {
+    try {
+      const declared = JSON.parse(readFileSync(budgetPath, 'utf8')).maxBytes;
+      if (typeof declared === 'number' && declared > 0) budget = declared;
+    } catch {
+      budget = null;
+    }
+  }
+
+  return {
+    present: true, missing, listed, sizes, total, budget,
+    overBudget: budget !== null && total > budget,
+  };
 }
 
 /**
@@ -1490,7 +1535,7 @@ async function main() {
   // a quiet "check skipped". Otherwise deleting the manifest would be a way to
   // silence the check that reads it -- the check would print "--" where it used
   // to print "ok", and nothing would fail.
-  for (const [flag, p] of [['--outbound', args.outbound], ['--csp', args.csp]]) {
+  for (const [flag, p] of [['--outbound', args.outbound], ['--csp', args.csp], ['--precache', args.precache]]) {
     if (p !== null && !existsSync(p)) {
       console.error(flag + ' was given but the file does not exist: ' + p);
       return 2;
@@ -1534,6 +1579,10 @@ async function main() {
   const cspPath = args.csp ?? (existsSync(defaultCsp) ? defaultCsp : null);
   push('  csp      = ' + (cspPath ?? 'none'));
 
+  const defaultPrecache = join(REPO_ROOT, 'scripts', 'precache-budget.json');
+  const precachePath = args.precache ?? (existsSync(defaultPrecache) ? defaultPrecache : null);
+  push('  precache = ' + (precachePath ?? 'none'));
+
   const refs = checkBaseRefs(site, normalised, args.strict);
   push('  scanned ' + refs.scanned + ' text files, ' + (refs.bytes / 1024).toFixed(0) + ' KiB');
   push('');
@@ -1560,11 +1609,28 @@ async function main() {
     })),
   ];
 
-  const shell = checkShellAssets(site);
-  const shellList = shell.missing.map((raw) => ({
-    key: 'shell-missing:' + raw, ref: raw,
-    notes: ['cache.addAll() is atomic: one 404 aborts the whole install'],
-  }));
+  const shell = checkShellAssets(site, precachePath);
+  const shellList = [
+    ...shell.missing.map((raw) => ({
+      key: 'shell-missing:' + raw, ref: raw,
+      notes: ['cache.addAll() is atomic: one 404 aborts the whole install'],
+    })),
+    ...(shell.overBudget
+      ? [{
+        key: 'precache-budget', ref: 'shellUrls()',
+        notes: [
+          'the install payload is ' + kib(shell.total) + ' KiB, over the ' +
+            kib(shell.budget) + ' KiB budget in ' +
+            (precachePath ? slash(precachePath.slice(REPO_ROOT.length + 1)) : '(no budget file)'),
+          'cache.addAll() is atomic and runs before the worker serves anything, so ' +
+            'every first-time visitor downloads all of it before the editor works offline',
+          'largest members: ' + [...shell.sizes]
+            .sort((a, b) => b.bytes - a.bytes).slice(0, 3)
+            .map((s) => s.raw + ' ' + kib(s.bytes) + ' KiB').join(', '),
+        ],
+      }]
+      : []),
+  ];
 
   const jsxFactory = await checkJsxFactory(site);
   const gate = checkExampleGate(site);
@@ -1632,12 +1698,21 @@ async function main() {
 
   push('');
   push('5. service-worker shell assets');
+  push('   (every URL shellUrls() names exists, and the atomic install payload fits its budget)');
   if (!shell.present) {
     push('  --  no sw.js in this tree');
   } else if (shellList.length === 0) {
-    push('  ok  all ' + shell.listed.length + ' precache targets exist');
+    push('  ok  all ' + shell.listed.length + ' precache targets exist; ' +
+      kib(shell.total) + ' KiB of ' + (shell.budget === null ? 'an unstated' : kib(shell.budget) + ' KiB') +
+      ' budget');
+    for (const s of shell.sizes) {
+      push('      ' + String(s.bytes).padStart(8) + ' B  ' + s.raw);
+    }
   } else {
-    push(...render(shellList, 'precache targets missing', null, accepted));
+    push(...render(shellList, 'precache findings', null, accepted));
+    for (const s of shell.sizes) {
+      push('      ' + String(s.bytes).padStart(8) + ' B  ' + s.raw);
+    }
   }
 
   push('');
@@ -1769,6 +1844,13 @@ async function main() {
       jsxVoid0CallSites: jsxSites.findings.map((f) => ({ chunk: f.ref, notes: f.notes })),
       storageUnguarded: storage.findings.map((f) => ({ ref: f.ref, notes: f.notes })),
       shellMissing: shell.missing,
+      serviceWorkerShell: {
+        budgetBytes: shell.budget,
+        totalBytes: shell.total,
+        overBudget: shell.overBudget,
+        targets: shell.sizes,
+        findings: shellList.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
+      },
       shellCsp: {
         manifest: cspPath,
         status: csp.status,

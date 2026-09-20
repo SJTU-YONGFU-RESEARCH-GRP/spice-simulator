@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "maxBytes": 131072,
+  "$comment": "Size budget for the service worker's install payload, i.e. the total byte size of everything site/sw.js shellUrls() names. install() runs cache.addAll(shellUrls()) before the worker can serve anything, and addAll() is atomic: every first-time visitor downloads the whole list before the editor is usable, and one member that fails to fetch aborts the entire install. The list is therefore a fixed up-front cost, and its size is a design decision rather than an accident.",
+  "$measured": {
+    "at": "2026-09-20",
+    "before": { "bytes": 755825, "kib": 738.1, "note": "index.html 1717 + manifest.webmanifest 634 + favicon.png 2595 + icon-192.png 58647 + icon-512.png 326919 + logo.png 365313" },
+    "after": { "bytes": 108319, "kib": 105.8, "note": "icon-512.png dropped from the list and logo.png reduced from a 558x558 RGBA source to 176x176 RGB" },
+    "whyThoseTwo": [
+      "logo.png was 365,313 B of 558x558 RGBA. A live browser measurement at DPR 4 showed the browser drawing it into a 176x176 device-pixel box: the element is 44x44 CSS and the stylesheet's other consumer, .app-brand-mark, is 40x40 -- so the source was 3.2x larger per axis than the largest raster any supported display asks for. Its alpha channel was also fully opaque (extrema 255,255), so dropping it loses nothing. Re-derived at 176x176 with a Lanczos resample: 44,726 B.",
+      "icon-512.png was 326,919 B named only by manifest.webmanifest, and was never requested across three measured page loads (a cold load, a ?example= deep link, and a post-simulation reload) -- while the browser did request icon-192.png on every one of them. It is a manifest icon, not a shell asset: the page itself never renders it."
+    ]
+  },
+  "$readBy": [
+    "scripts/check-artifacts.mjs check 5 (static: sums the byte size of every file shellUrls() names)",
+    "scripts/precache-weight.mjs (runtime: sums what the browser actually stored in the shell cache)"
+  ],
+  "$rationale": "128 KiB is deliberately loose: the repaired list sits at 105.8 KiB, so ordinary growth is absorbed without ceremony, while the state this budget exists to prevent (738.1 KiB, of which 735.9 KiB was two images) is refused by a factor of 5.8. A per-file limit was rejected because the real constraint is the atomic total every first-time visitor pays, not any single asset."
+}

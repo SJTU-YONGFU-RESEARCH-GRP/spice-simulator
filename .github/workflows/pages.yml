@@ -87,6 +87,16 @@ jobs:
       # this step re-introduces them and requires the guard to name each one.
       - name: Prove the worker-cache checks are not vacuous (mutation test)
         run: node scripts/sw-cache.negctl.mjs --static-only
+      # The install payload is what every first-time visitor downloads before the
+      # editor works offline, and it is paid atomically: install() runs
+      # cache.addAll(), which aborts the whole install if one member fails. Check
+      # 5 sums the byte size of every URL shellUrls() names and holds it to
+      # scripts/precache-budget.json, which exists because the list was 738.1 KiB
+      # of which 735.9 KiB was two images. This step breaks that budget two ways
+      # -- an oversized file and a re-declared one -- and requires the guard to
+      # say so. site/ is a committed build product, so a rebuild restores both.
+      - name: Prove the install-budget check is not vacuous (mutation test)
+        run: node scripts/precache-budget.negctl.mjs --static-only
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -164,5 +174,17 @@ jobs:
       # check 12 (static) and must kill the offline test (runtime).
       - name: Prove the offline test is not vacuous (mutation test)
         run: node scripts/sw-cache.negctl.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # Check 5 reads the files shellUrls() names. This reads the cache back out
+      # of a running browser instead, so the number is the one users actually
+      # pay -- and it compares every stored entry against its file on disk, which
+      # is how a target that resolved to something else would surface.
+      - name: Install payload, measured in the browser
+        run: node scripts/precache-weight.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      - name: Prove the install-budget check is not vacuous (mutation test)
+        run: node scripts/precache-budget.negctl.mjs --require
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
