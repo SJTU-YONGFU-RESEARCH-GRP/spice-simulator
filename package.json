@@ -22,6 +22,8 @@
     "check:precache": "node scripts/precache-weight.mjs",
     "check:precache:neg": "node scripts/precache-budget.negctl.mjs",
     "check:precache:neg:static": "node scripts/precache-budget.negctl.mjs --static-only",
+    "check:examples": "node scripts/example-outcomes.mjs",
+    "check:examples:neg": "node scripts/example-outcomes.negctl.mjs",
     "patch:outbound": "node scripts/patch-outbound.mjs",
     "patch:storage": "node scripts/patch-outbound.mjs --manifest=scripts/storage-guard.json",
     "patch:csp": "node scripts/patch-outbound.mjs --manifest=scripts/shell-csp.json",

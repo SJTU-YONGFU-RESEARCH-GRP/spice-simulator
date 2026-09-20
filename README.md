@@ -53,13 +53,16 @@ node scripts/offline-sim.mjs --require
 node scripts/sw-cache.negctl.mjs --static-only
 node scripts/precache-weight.mjs --require
 node scripts/precache-budget.negctl.mjs --static-only
+node scripts/example-outcomes.mjs --require
+node scripts/example-outcomes.negctl.mjs --require
 ```
 
 or `npm run check:artifacts` / `npm run smoke` / `npm run check:storage` /
 `npm run check:numeric` / `npm run check:numeric:neg` / `npm run check:egress` /
 `npm run check:egress:neg` / `npm run check:csp` / `npm run check:csp:neg` /
 `npm run check:offline` / `npm run check:offline:neg:static` /
-`npm run check:precache` / `npm run check:precache:neg:static`.
+`npm run check:precache` / `npm run check:precache:neg:static` /
+`npm run check:examples` / `npm run check:examples:neg`.
 
 `npm run preview` serves with `Cache-Control: no-store`, which is what you want
 while editing the artifact but which also stops the service worker from caching
@@ -81,6 +84,8 @@ anything — so a preview cannot tell you whether the worker works. Pass
 | `sw-cache.negctl.mjs` | Would that test **notice**? Re-introduces the two defects that made the worker cache nothing (a response cloned inside the `caches.open()` callback; the engine unrouted because its `fetch()` has an empty `destination`) and requires **both** channels to catch them: check 12 names each defect, and `offline-sim.mjs` fails. `--static-only` runs just the source-level half, without a browser. |
 | `precache-weight.mjs` | How big is the install payload **in a browser**? `install()` runs `cache.addAll(shellUrls())`, which every first-time visitor downloads in full before the editor works offline — and which aborts the install outright if one member fails. This loads the app, reads the shell cache back, sums what is really stored, compares each entry against its file on disk, and holds the total to `scripts/precache-budget.json`. |
 | `precache-budget.negctl.mjs` | Would the install-budget check **notice**? Three mutants — `logo.png` replaced by a real 512×512 PNG, the 512 px manifest icon re-declared in `shellUrls()`, and a precache target deleted (where `addAll()`'s atomicity aborts the install) — each required to be caught by **both** channels: check 5 names it, and `precache-weight.mjs` fails. `--static-only` runs without a browser. |
+| `example-outcomes.mjs` | Do the built-in examples do what the catalog says? Walks every catalog entry. Expectations are computed from the shipped chunks — the catalog, each payload's setup list, and the browser executor's advertised profiles — and then checked against the page the product renders, so the two sides are independent. An example with no setups must offer nothing to run; one whose profile is advertised must complete and render; one whose profile is not must carry a `(unavailable)` warning **before** the run and then refuse with a structured problem, drawing no plots. The sweep requires both a completion and a refusal to appear, because a harness that has only ever seen one of them cannot tell an honest refusal from a dead run. |
+| `example-outcomes.negctl.mjs` | Would that check **notice**? Six mutants — the pre-run warning removed, the unavailable profile declared as available, the runnable lab's model card deleted, the Run control made unaddressable, a catalog entry pointing at a payload that does not exist, and the only un-runnable lab removed from the catalog — each required to turn the check red for its own stated reason. The control case runs first: if it is not green, nothing else in the file means anything. |
 
 All of these run in CI: the source-level checks on the deploy job, before `site/`
 is published; the browser checks on the `smoke` job.

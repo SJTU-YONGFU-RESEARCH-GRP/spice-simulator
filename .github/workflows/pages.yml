@@ -188,3 +188,26 @@ jobs:
         run: node scripts/precache-budget.negctl.mjs --require
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # The smoke test above only ever drives one example, and that example is
+      # the one that runs. This walks every entry in the shipped catalog and
+      # requires each to reach an outcome the catalog itself implies: a setup
+      # whose profile the executor advertises must complete with plots; a setup
+      # whose profile it does not must be marked "(unavailable)" before the run
+      # and then refused with a structured problem, before any deck executes; an
+      # example that declares no setups must offer nothing to run. One lab ships
+      # in the third state and three in the last, so the run has to tell those
+      # apart rather than assume every tile is a lab.
+      - name: Every built-in example either runs or says why it cannot
+        run: node scripts/example-outcomes.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # And prove that check is not vacuous. Six mutations: the pre-run warning
+      # removed, the unavailable profile declared as available, the model card
+      # the runnable lab includes deleted, the Run control made unaddressable, a
+      # catalog entry pointing at a payload that does not exist, and the only
+      # un-runnable lab taken out of the catalog so the sweep loses its negative
+      # control. Each must turn the check red for its own reason.
+      - name: Prove the example-outcome check is not vacuous (mutation test)
+        run: node scripts/example-outcomes.negctl.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
