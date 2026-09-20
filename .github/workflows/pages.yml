@@ -40,6 +40,13 @@ jobs:
       # finding -- so the list cannot outlive what it describes.
       - name: Guard published artifact references
         run: node scripts/check-artifacts.mjs --accept=scripts/known-deviations.json
+      # Static guard + browser smoke prove the bundle loads and runs; neither
+      # checks whether the NUMBERS are correct. This step drives the shipped
+      # WASM in a Node host and compares every result against first-principles
+      # closed forms, so a rebuild that silently changes a device model fails
+      # here, before it can be published.
+      - name: Cross-check numeric results against first principles
+        run: node scripts/numeric-crosscheck.mjs
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
