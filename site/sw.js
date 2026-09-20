@@ -22,7 +22,15 @@
 // The A7 repair of 2026-09-19 patched all three in one pass (31 call sites
 // emitted as `(void 0)(`, uncallable). CACHE takes the surface chunk's digest:
 // that is the one whose failure took the whole application down on Run.
-const CACHE = "icm-static-shell-e334a99451bc";
+//   2026-09-20, outbound repair (scripts/patch-outbound.mjs, two chunks):
+//     bcc8626f4326 <- assets/index-7P_aude7.js   (B7: feedback link re-pointed
+//                     from the private spice-simulator-lab to the public
+//                     spice-simulator repository's new-issue URL)
+//     ff20e7487948 <- assets/src-CMkpkg0p.js     (S4: the ngspice CDN fallback
+//                     now verifies the payload against the SHA-256 of the
+//                     engine this repository ships, and refuses to execute on
+//                     mismatch)
+const CACHE = "icm-static-shell-ff20e7487948";
 
 function scopeUrl() {
   return new URL(self.registration.scope);

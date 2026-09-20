@@ -9,6 +9,7 @@ on:
     branches: [main, master]
     paths:
       - "site/**"
+      - "scripts/**"
       - ".github/workflows/pages.yml"
 
 permissions:
@@ -55,6 +56,21 @@ jobs:
       # thing it guards breaks".
       - name: Prove the numeric guard is not vacuous (mutation test)
         run: node scripts/numeric-crosscheck.negctl.mjs
+      # The guard above classifies every outbound target the artifact can reach
+      # (scripts/outbound-manifest.json). That is a statement about text: a
+      # repair that is present but inert -- a comparison that never runs -- would
+      # satisfy it. This step lifts the loader and hash helper out of the shipped
+      # chunk and runs them, and requires a tampered payload to be refused *and
+      # never executed*.
+      - name: Verify the ngspice fallback enforces its integrity pin
+        run: node scripts/egress-integrity.mjs
+      # And this one breaks the outbound surface four different ways (a
+      # forbidden URL, an undeclared host, a lost repair, a drifted pin) plus
+      # the runtime probe three ways, and requires every case to be caught --
+      # with a control tree that must stay clean, so a check that always fails
+      # cannot pass for a working one.
+      - name: Prove the outbound checks are not vacuous (mutation test)
+        run: node scripts/outbound-repair.negctl.mjs
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:

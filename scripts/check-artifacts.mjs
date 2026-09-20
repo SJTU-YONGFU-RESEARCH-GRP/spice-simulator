@@ -38,7 +38,16 @@
  *                   place. The file looks intact and the runtime chunk passes
  *                   check 6; only the branch that renders the broken site
  *                   fails. See checkJsxCallSites.
- *   9. (meta)       Accepted deviations that matched nothing. Printed only when
+ *   9. outbound     Every http(s) URL literal in the tree must be classified in
+ *                   scripts/outbound-manifest.json, no forbidden target may
+ *                   appear, every declared repair must be present in the
+ *                   artifact, and every integrity pin must still equal the hash
+ *                   of the file it is derived from. This is the only check that
+ *                   looks outward: it is what makes "site/ is a build artifact
+ *                   nobody can rebuild" survivable, because a rebuild that adds,
+ *                   drops or re-points a network target fails here instead of
+ *                   reaching users. See checkOutboundEgress.
+ *  10. (meta)       Accepted deviations that matched nothing. Printed only when
  *                   there are any, and never silenceable.
  *
  * The rule in (1) is deliberately narrow: a reference is reported only when
@@ -61,6 +70,8 @@
  *                  fail the run. An entry that matches nothing IS a failure,
  *                  so the list cannot outlive the deviation it describes.
  *                  Default: scripts/known-deviations.json when it exists.
+ *   --outbound=<file>  Manifest of audited outbound targets for check 9.
+ *                  Default: scripts/outbound-manifest.json when it exists.
  *   --json=<file>  Also write findings as JSON.
  *
  * Exit codes: 0 clean or only accepted deviations, 1 findings, 2 usage or IO
@@ -75,6 +86,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
@@ -105,7 +117,10 @@ const CSS_URL = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)\s'"]+))\s*\)/g;
 const SW_SHELL = /new URL\(\s*"([^"]*)"\s*,\s*scope\s*\)/g;
 
 function parseArgs(argv) {
-  const out = { site: join(REPO_ROOT, 'site'), base: null, strict: false, json: null, accept: null };
+  const out = {
+    site: join(REPO_ROOT, 'site'), base: null, strict: false, json: null, accept: null,
+    outbound: null,
+  };
   for (const arg of argv) {
     // An empty value would silently resolve to the current directory and scan
     // the wrong tree, which looks like a real finding rather than a typo.
@@ -114,6 +129,7 @@ function parseArgs(argv) {
     else if (arg.startsWith('--base=')) out.base = arg.slice('--base='.length);
     else if (arg === '--strict') out.strict = true;
     else if (arg.startsWith('--accept=')) out.accept = resolve(REPO_ROOT, arg.slice('--accept='.length));
+    else if (arg.startsWith('--outbound=')) out.outbound = resolve(REPO_ROOT, arg.slice('--outbound='.length));
     else if (arg.startsWith('--json=')) out.json = arg.slice('--json='.length);
     else return { error: 'unknown argument: ' + arg };
   }
@@ -449,11 +465,16 @@ function functionSpan(text, name) {
   if (text.indexOf(header, at + header.length) !== -1) {
     return { error: 'function ' + name + '() appears more than once' };
   }
+  // `async` sits before the header, so searching for the header alone drops it
+  // and an awaited body then reads as a syntax error. Nothing this check
+  // currently lifts is async; taking the keyword anyway keeps a future async
+  // resolver from failing with a message about reserved words.
+  const start = text.slice(Math.max(0, at - 6), at) === 'async ' ? at - 6 : at;
   const brace = text.indexOf('{', at + header.length);
   if (brace === -1) return { error: 'function ' + name + '() has no body' };
   const span = balancedSpan(text, brace);
   if (span.error) return span;
-  return { text: text.slice(at, span.end + 1), at, end: span.end };
+  return { text: text.slice(start, span.end + 1), at: start, end: span.end };
 }
 
 /**
@@ -726,6 +747,184 @@ function checkJsxCallSites(site) {
 }
 
 /**
+ * Check 9: the artifact's outbound surface is audited, classified, and still
+ * repaired.
+ *
+ * Why this check exists. site/ is a build artifact committed to git and its
+ * editor sources are not in any public repository, so there is no build step a
+ * reviewer can read. The tree nonetheless decides which third-party hosts the
+ * browser talks to and, on the ngspice fallback, executes whatever that host
+ * returns inside the application's origin. Two hand analyses of this tree
+ * disagreed with it in both directions -- a URL that looked like an unpinned
+ * load point turned out to be a console.error() hint string, and a target that
+ * looked unverified turned out to carry its own SRI -- which is the argument for
+ * a mechanical inventory rather than a reading.
+ *
+ * Four assertions:
+ *   a. Nothing listed under "forbidden" may appear. For B7 this is the
+ *      regression detector: the product's only feedback control pointed at a
+ *      private repository, so anonymous visitors got a 404.
+ *   b. Every http(s) URL literal in the tree must be classified in the manifest.
+ *      A rebuild that adds a host, re-points a CDN, or inlines a new URL fails
+ *      here before it can be published, instead of being reviewed by nobody.
+ *   c. Every declared repair must actually be present in the artifact. This is
+ *      what makes the repairs durable: the guard re-reads the shipped bytes, so
+ *      a rebuild that reverts one is a finding rather than a silent regression.
+ *   d. Every integrity pin that carries `mustEqual` is re-derived from that file
+ *      and compared with the pinned value. The pin is not a frozen constant --
+ *      it must equal the hash of the engine this repository actually ships, so
+ *      replacing that engine fails the build until the pin is re-derived.
+ *
+ * `reachable: false` entries are not dead weight: they are the record that a URL
+ * was read in context and ruled out, which is the part that stops the next
+ * reader from re-deriving the same wrong conclusion.
+ */
+const EGRESS_URL =
+  /https?:\/\/(?:localhost|[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+)(?::\d+)?[A-Za-z0-9._~:/?#@!&+=%-]*/g;
+
+/** Occurrences of `needle` in `text`. String#split keeps this honest. */
+function countOf(text, needle) {
+  if (needle === '') return 0;
+  return text.split(needle).length - 1;
+}
+
+function collectOutbound(site) {
+  const found = new Map();
+  let scanned = 0;
+  for (const path of walk(site)) {
+    if (!TEXT_EXT.has(extname(path).toLowerCase())) continue;
+    const text = readText(path);
+    if (text === null) continue;
+    scanned += 1;
+    const rel = slash(path.slice(site.length + 1));
+    // Bundles also carry JSON-escaped URLs ("https:\/\/host\/x").
+    const body = text.split('\\/').join('/');
+    EGRESS_URL.lastIndex = 0;
+    let m;
+    while ((m = EGRESS_URL.exec(body)) !== null) {
+      if (!found.has(m[0])) found.set(m[0], new Set());
+      found.get(m[0]).add(rel + '@' + m.index);
+    }
+  }
+  return { found, scanned };
+}
+
+function checkOutboundEgress(site, manifestPath) {
+  const out = { status: 'checked', scanned: 0, declared: 0, present: 0, findings: [], notes: [] };
+  if (manifestPath === null || !existsSync(manifestPath)) {
+    out.status = 'unavailable';
+    out.notes.push('no outbound manifest (pass --outbound=<file> to enable this check)');
+    return out;
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  } catch (e) {
+    out.status = 'unreadable';
+    out.notes.push('cannot parse ' + manifestPath + ': ' + e.message);
+    return out;
+  }
+
+  const targets = manifest.targets ?? [];
+  const byUrl = new Map(targets.map((t) => [t.url, t]));
+  const banned = new Map((manifest.forbidden ?? []).map((f) => [f.url, f]));
+  const repairs = manifest.repairs ?? [];
+  out.declared = targets.length;
+
+  const { found, scanned } = collectOutbound(site);
+  out.scanned = scanned;
+
+  for (const [url, entry] of banned) {
+    const at = found.get(url);
+    if (!at) continue;
+    out.findings.push({
+      key: 'egress-forbidden:' + url, ref: url,
+      notes: [
+        entry.why ?? 'listed under "forbidden" in the outbound manifest',
+        ...(entry.tracked ? ['tracked: ' + entry.tracked] : []),
+        'seen at ' + [...at].sort().join(', '),
+      ],
+    });
+  }
+
+  for (const [url, at] of found) {
+    if (byUrl.has(url) || banned.has(url)) continue;
+    const sites = [...at].sort();
+    out.findings.push({
+      key: 'egress-undeclared:' + url, ref: url,
+      notes: [
+        'no entry in the outbound manifest -- classify it as namespace, doc-only, ' +
+        'user-link, remote-script, self-reference or forbidden before publishing',
+        'seen at ' + sites.slice(0, 6).join(', ') +
+          (sites.length > 6 ? ' (+' + (sites.length - 6) + ' more)' : ''),
+      ],
+    });
+  }
+
+  for (const repair of repairs) {
+    const path = join(site, repair.file.split('/').join('\\'));
+    const label = repair.id + ' [' + repair.file + ']';
+    if (!existsSync(path)) {
+      out.findings.push({
+        key: 'egress-repair-absent:' + repair.id, ref: label,
+        notes: ['the file this repair applies to is not in this tree'],
+      });
+      continue;
+    }
+    const text = readFileSync(path, 'utf8');
+    const pin = repair.pinFrom ? byUrl.get(repair.pinFrom)?.integrity?.hex ?? null : null;
+    const edits = repair.edits ?? [{ find: repair.find, replace: repair.replace }];
+    for (const [i, edit] of edits.entries()) {
+      const want = (edit.replace ?? '').split('{PIN}').join(pin ?? '');
+      if (want !== '' && countOf(text, want) === 1) continue;
+      out.findings.push({
+        key: 'egress-repair-lost:' + repair.id + '#' + i,
+        ref: label + ' edit #' + i,
+        notes: [
+          'the repaired form is not in this artifact: ' + (repair.why ?? 'declared in the outbound manifest'),
+          'repair: node scripts/patch-outbound.mjs',
+        ],
+      });
+    }
+  }
+
+  for (const t of targets) {
+    const integ = t.integrity;
+    if (!integ || !integ.mustEqual) continue;
+    const source = resolve(REPO_ROOT, integ.mustEqual);
+    if (!existsSync(source)) {
+      out.findings.push({
+        key: 'egress-pin-source:' + t.url, ref: integ.mustEqual,
+        notes: ['the file this integrity pin is derived from is not in the repository'],
+      });
+      continue;
+    }
+    const actual = createHash('sha256').update(readFileSync(source)).digest('hex');
+    if (actual === integ.hex) {
+      out.notes.push('pin re-derived: sha256:' + actual.slice(0, 16) + '... == ' +
+        integ.mustEqual + ' (and the declared repairs embed the same value)');
+      continue;
+    }
+    out.findings.push({
+      key: 'egress-pin-drift:' + t.url, ref: integ.mustEqual,
+      notes: [
+        'the artifact and its pin have diverged: ' + integ.mustEqual + ' hashes to ' + actual,
+        'but the manifest pins ' + integ.hex,
+        'update the manifest pin, then re-run node scripts/patch-outbound.mjs',
+      ],
+    });
+  }
+
+  const absent = targets.filter((t) => !found.has(t.url));
+  out.present = targets.length - absent.length;
+  if (absent.length > 0) {
+    out.notes.push(absent.length + ' declared target(s) absent from this tree: ' +
+      absent.map((t) => t.url).join(', '));
+  }
+  return out;
+}
+
+/**
  * Render a keyed finding list, separating accepted deviations from live ones.
  *
  * An accepted entry is deliberately still printed. The point of the list is
@@ -792,6 +991,10 @@ async function main() {
   }
   push('  accepted = ' + (acceptPath ?? 'none') + ' (' + acceptEntries.length + ' entry)');
 
+  const defaultOutbound = join(REPO_ROOT, 'scripts', 'outbound-manifest.json');
+  const outboundPath = args.outbound ?? (existsSync(defaultOutbound) ? defaultOutbound : null);
+  push('  outbound = ' + (outboundPath ?? 'none'));
+
   const refs = checkBaseRefs(site, normalised, args.strict);
   push('  scanned ' + refs.scanned + ' text files, ' + (refs.bytes / 1024).toFixed(0) + ' KiB');
   push('');
@@ -827,6 +1030,7 @@ async function main() {
   const jsxFactory = await checkJsxFactory(site);
   const gate = checkExampleGate(site);
   const jsxSites = checkJsxCallSites(site);
+  const egress = checkOutboundEgress(site, outboundPath);
   const jsxFactoryList = jsxFactory
     .filter((r) => r.failures.length > 0)
     .map((r) => ({
@@ -845,7 +1049,7 @@ async function main() {
   const matched = new Set();
   const lists = [
     escapedList, missingList, externalList, jsxList, shellList, jsxFactoryList,
-    jsxSites.findings,
+    jsxSites.findings, egress.findings,
   ];
   for (const list of lists) {
     for (const f of list) {
@@ -929,9 +1133,25 @@ async function main() {
       'the first render of the affected branch throws TypeError', accepted));
   }
 
+  push('');
+  push('9. outbound egress');
+  push('   (every network target in this tree is classified in ' +
+    (outboundPath ? slash(outboundPath.slice(REPO_ROOT.length + 1)) : 'no manifest') +
+    ', and every declared repair is present)');
+  if (egress.status !== 'checked') {
+    push('  --  ' + egress.notes.join('; '));
+  } else if (egress.findings.length === 0) {
+    push('  ok  ' + egress.declared + ' declared target(s), ' + egress.present +
+      ' present, none forbidden, every declared repair in place');
+    for (const n of egress.notes) push('      ' + n);
+  } else {
+    push(...render(egress.findings, 'outbound findings', null, accepted));
+    for (const n of egress.notes) push('      ' + n);
+  }
+
   if (stale.length > 0) {
     push('');
-    push('9. stale accepted deviations');
+    push('10. stale accepted deviations');
     push(...render(stale, 'accepted entries that matched nothing', null, () => false));
   }
 
@@ -961,6 +1181,14 @@ async function main() {
       exampleGate: gate.findings.map((f) => ({ chunk: f.ref, notes: f.notes })),
       jsxVoid0CallSites: jsxSites.findings.map((f) => ({ chunk: f.ref, notes: f.notes })),
       shellMissing: shell.missing,
+      outbound: {
+        manifest: outboundPath,
+        status: egress.status,
+        declared: egress.declared,
+        present: egress.present,
+        findings: egress.findings.map((f) => ({ key: f.key, url: f.ref, notes: f.notes })),
+        notes: egress.notes,
+      },
       acceptedKeys: [...matched],
       staleAcceptances: stale.map((s) => s.ref),
       findings,

@@ -1,0 +1,234 @@
+{
+  "version": 1,
+  "$comment": "Audited inventory of every outbound target reachable from site/. site/ is a committed build artifact whose editor sources are not in any public repository, so a rebuild can silently add, drop or re-point a network target and nothing in the tree would notice. Check 9 (outbound egress) requires every http(s) URL literal in site/ to appear here and classifies it, requires every entry under 'forbidden' to be absent, and re-derives each declared integrity pin from the repository's own files. Anything new fails the publish gate until a human classifies it.",
+  "$how": "Built from a whole-tree scan on 2026-09-20 with the same file filter check 9 uses (site/**/*.{js,mjs,cjs,html,htm,css,webmanifest,json,svg}, files <= 8 MiB). URL literals were extracted, then each one was sliced and read in context before being classified. 'reachable: false' means the literal is present in the bundle but no code path in this application can turn it into a request; the evidence field says why.",
+  "$roles": {
+    "namespace": "XML/JSON namespace URI or schema id. Never requested; XML/JSON parsers treat it as an opaque identifier.",
+    "doc-only": "Appears inside a string that is only logged, thrown or displayed. No call site turns it into a request.",
+    "user-link": "Rendered as an href for a human to click. No request happens until the reader clicks it.",
+    "remote-script": "Fetched and then executed as JavaScript in the application's origin. This is the only class that can change the application's behaviour, so it is the only class subject to an integrity pin.",
+    "self-reference": "The deployed URL of this very site, recorded in a manifest the application reads.",
+    "loopback-placeholder": "A localhost base URL that only the no-window (server-render) branch of a template literal can select. The static deploy always runs with a window, so the branch is unreachable here.",
+    "forbidden": "Must not appear anywhere in site/. Presence is a finding."
+  },
+  "targets": [
+    {
+      "url": "http://json-schema.org/draft-04/schema#",
+      "role": "namespace",
+      "reachable": false,
+      "evidence": "assets/src-aCByi2RB.js@52370 -- JSON Schema `$schema` identifier emitted by the bundled zod-to-json-schema."
+    },
+    {
+      "url": "http://json-schema.org/draft-07/schema#",
+      "role": "namespace",
+      "reachable": false,
+      "evidence": "assets/src-aCByi2RB.js@52296 -- same, draft-07."
+    },
+    {
+      "url": "https://json-schema.org/draft/2020-12/schema",
+      "role": "namespace",
+      "reachable": false,
+      "evidence": "assets/src-aCByi2RB.js@52217 -- same, 2020-12."
+    },
+    {
+      "url": "http://jspdf.default.namespaceuri/",
+      "role": "namespace",
+      "reachable": false,
+      "evidence": "assets/jspdf.es.min--ZR-djPE.js@350139 -- jsPDF's synthetic XML namespace for its own PDF metadata; not a resolvable host."
+    },
+    {
+      "url": "http://www.w3.org/1998/Math/MathML",
+      "role": "namespace",
+      "reachable": false,
+      "evidence": "MathML namespace, used by mathlive, DOMPurify and the bundled renderer."
+    },
+    {
+      "url": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+      "role": "namespace",
+      "reachable": false,
+      "evidence": "assets/jspdf.es.min--ZR-djPE.js@262555 -- RDF namespace in jsPDF's metadata writer."
+    },
+    {
+      "url": "http://www.w3.org/1999/xhtml",
+      "role": "namespace",
+      "reachable": false,
+      "evidence": "XHTML namespace, used by DOMPurify."
+    },
+    {
+      "url": "http://www.w3.org/1999/xlink",
+      "role": "namespace",
+      "reachable": false,
+      "evidence": "XLINK namespace, used by mathlive and the SVG serialiser."
+    },
+    {
+      "url": "http://www.w3.org/2000/svg",
+      "role": "namespace",
+      "reachable": false,
+      "evidence": "SVG namespace; the most common literal in the tree (icon.svg and every SVG-writing chunk)."
+    },
+    {
+      "url": "http://www.w3.org/2001/10/synthesis",
+      "role": "namespace",
+      "reachable": false,
+      "evidence": "assets/mathlive.min-DQ_veL_t.js@680751 -- SSML namespace for mathlive's speech output."
+    },
+    {
+      "url": "http://www.w3.org/XML/1998/namespace",
+      "role": "namespace",
+      "reachable": false,
+      "evidence": "The reserved xml: namespace; used by DOMPurify and svg2pdf."
+    },
+    {
+      "url": "https://react.dev/errors/",
+      "role": "doc-only",
+      "reachable": false,
+      "evidence": "assets/index-7P_aude7.js@12401,15891 -- the prefix React prepends to its minified error numbers. Printed, never fetched."
+    },
+    {
+      "url": "https://www.npmjs.com/package/aws-sdk",
+      "role": "doc-only",
+      "reachable": false,
+      "evidence": "assets/mathlive.min-DQ_veL_t.js@757283,758830 -- inside a MathLive error message about an unrelated optional dependency."
+    },
+    {
+      "url": "https://github.com/zloirock/core-js",
+      "role": "doc-only",
+      "reachable": false,
+      "evidence": "assets/index.es-D0_ZYOWo.js@4086 -- core-js banner string."
+    },
+    {
+      "url": "https://github.com/zloirock/core-js/blob/v3.50.0/LICENSE",
+      "role": "doc-only",
+      "reachable": false,
+      "evidence": "assets/index.es-D0_ZYOWo.js@4020 -- core-js licence string."
+    },
+    {
+      "url": "https://esm.run/@cortex-js/compute-engine",
+      "role": "doc-only",
+      "reachable": false,
+      "evidence": "assets/mathlive.min-DQ_veL_t.js@688004,722087,772525,772907 -- all four occurrences are inside MathLive console.error() hint strings ('Load the library, for example with: import ...'). MathLive itself reads globalThis[Symbol.for('io.cortexjs.compute-engine')] and makes no request. The earlier hand analysis listed this as an unpinned load point; the literal is a documentation string, not a load. Depends on: the application never sets that global, so MathLive's compute-engine features stay off either way."
+    },
+    {
+      "url": "https://github.com/SJTU-YONGFU-RESEARCH-GRP",
+      "role": "user-link",
+      "reachable": true,
+      "evidence": "assets/editor-help-dialog-RJLiWGB5.js@882 -- the organisation link in the help dialog.",
+      "verified": {
+        "checkedAt": "2026-09-20",
+        "method": "GitHub REST GET /orgs/SJTU-YONGFU-RESEARCH-GRP",
+        "result": "HTTP 200, public organisation"
+      }
+    },
+    {
+      "url": "https://github.com/SJTU-YONGFU-RESEARCH-GRP/spice-simulator",
+      "role": "user-link",
+      "reachable": true,
+      "evidence": "assets/editor-help-dialog-RJLiWGB5.js@970 -- 'source repository' link in the help dialog.",
+      "verified": {
+        "checkedAt": "2026-09-20",
+        "method": "GitHub REST GET /repos/SJTU-YONGFU-RESEARCH-GRP/spice-simulator",
+        "result": "HTTP 200, private=false, visibility=public, archived=false, has_issues=true"
+      }
+    },
+    {
+      "url": "https://github.com/SJTU-YONGFU-RESEARCH-GRP/spice-simulator/issues/new",
+      "role": "user-link",
+      "reachable": true,
+      "evidence": "assets/index-7P_aude7.js -- the 'Report bug' control builds a prefilled public issue here (title, body template, environment block). Replaces the private spice-simulator-lab target; see repairs.bug-report-link.",
+      "verified": {
+        "checkedAt": "2026-09-20",
+        "method": "GitHub REST GET /repos/SJTU-YONGFU-RESEARCH-GRP/spice-simulator",
+        "result": "HTTP 200, private=false, has_issues=true, open_issues_count=0 -- new-issue URL is servable to anonymous visitors"
+      }
+    },
+    {
+      "url": "https://sjtu-yongfu-research-grp.github.io/spice-simulator/",
+      "role": "self-reference",
+      "reachable": true,
+      "evidence": "release-manifest.json@173 -- the deployed URL this build was published to. Matches package.json homepage."
+    },
+    {
+      "url": "http://localhost",
+      "role": "loopback-placeholder",
+      "reachable": false,
+      "evidence": "assets/connect-agent-panel-CLDuXA5M.js@4470 -- `typeof window > 'u' ? 'http://localhost' : window.location.origin` selects this branch only when there is no window. The result is interpolated into a clipboard template (function o() -> `${base}/api/agent/kit`), never fetched by the application. On the static deploy the branch cannot be taken."
+    },
+    {
+      "url": "https://cdnjs.cloudflare.com/ajax/libs/pdfobject/2.1.1/pdfobject.min.js",
+      "role": "remote-script",
+      "reachable": false,
+      "evidence": "assets/jspdf.es.min--ZR-djPE.js@101820 -- loaded only by jsPDF's output('pdfobjectnewwindow')/('dataurlnewwindow') branch, which injects a <script> into a popup. No call site in this application selects those output modes (the only occurrences of the mode names are inside jspdf itself), so the branch is unreachable here. jsPDF pins the version (2.1.1) and sets integrity=sha512-4ze/a9/4jqu+tX9dfOqJYSvyYd5M6qum/3HpCLr+/Jqf0whc37VUbkpNGHR7/8pSnCFw47T1fmIpwBV7UySh3g== plus crossOrigin=anonymous on that element; the digest was checked against the bytes cdnjs serves on 2026-09-20 and matches, so the earlier claim that this target ships no integrity check was wrong.",
+      "integrity": {
+        "algo": "sha512",
+        "base64": "4ze/a9/4jqu+tX9dfOqJYSvyYd5M6qum/3HpCLr+/Jqf0whc37VUbkpNGHR7/8pSnCFw47T1fmIpwBV7UySh3g==",
+        "enforcedBy": "the vendor bundle itself (element.integrity in assets/jspdf.es.min--ZR-djPE.js)",
+        "assertedByGuard": false,
+        "whyNotAsserted": "the hash is hard-coded in third-party minified code we do not patch, and the target is unreachable through this application's UI, so asserting it would only add a brittle string match over a dead branch."
+      },
+      "verified": {
+        "checkedAt": "2026-09-20",
+        "method": "downloaded the cdnjs artifact and hashed it; compared with the literal in the vendor bundle",
+        "result": "sha512 matches exactly (5541 bytes)"
+      }
+    },
+    {
+      "url": "https://cdn.jsdelivr.net/npm/@o.z/ngspice-wasm@0.0.0/ngspice.js",
+      "role": "remote-script",
+      "reachable": true,
+      "evidence": "assets/src-CMkpkg0p.js -- fetched by Dt() and executed from a Blob URL. This is the fallback the browser executor uses when the self-hosted /spice-simulator/vendor/ngspice.js cannot be fetched. Pin value corrected: the earlier hand analysis called @0.0.0 a mutable tag, but npm rejects a republish of an existing version and 0.0.0 is the package's only published version (dist-tags: latest=0.0.0), so the reference is immutable. What was missing is the integrity check, which repairs.ngspice-cdn-integrity adds.",
+      "integrity": {
+        "algo": "sha256",
+        "hex": "b285fc2d5b19135ed9b775ab41a6ceeb9bb75482bc6b3a44956cc6c959406b93",
+        "mustEqual": "site/vendor/ngspice.js",
+        "enforcedBy": "the application's own Rt() helper (globalThis.crypto.subtle.digest('SHA-256', ...)), called from Dt(); a mismatch throws instead of executing the payload",
+        "assertedByGuard": true,
+        "whyAsserted": "the pin is a literal this repository owns, and the artifact it must match -- site/vendor/ngspice.js -- is in the same repository. Re-deriving the pin from that file on every run means the two can never drift apart: replacing the self-hosted engine fails the guard until the pin is re-derived.",
+        "provenance": "The CDN artifact and site/vendor/ngspice.js are byte-identical (7,211,245 bytes, same sha256), so the fallback is a mirror of the asset we ship, not an independent build. The pin is therefore exactly the hash of our own file. Text-vs-bytes equivalence was verified before pinning: sha256(raw bytes) == sha256(utf8(text(bytes))) for this artifact, which is what the app's helper computes."
+      },
+      "verified": {
+        "checkedAt": "2026-09-20",
+        "method": "npm registry GET /@o.z%2Fngspice-wasm for versions; downloaded the jsDelivr artifact and hashed it; hashed site/vendor/ngspice.js",
+        "result": "versions=[0.0.0], latest=0.0.0; CDN sha256 == vendor sha256 == the pinned hex"
+      }
+    }
+  ],
+  "forbidden": [
+    {
+      "url": "https://github.com/SJTU-YONGFU-RESEARCH-GRP/spice-simulator-lab/issues/new",
+      "why": "The target repository is private (docs/REPO_LAYOUT.md records Visibility=Private as intentional; the public GitHub API returns 404 for it). Every anonymous visitor who pressed the product's only feedback control landed on a 404. Replaced by the public repository's new-issue URL; re-introducing it is a finding.",
+      "tracked": "B7 / P1-5"
+    }
+  ],
+  "repairs": [
+    {
+      "id": "bug-report-link",
+      "file": "assets/index-7P_aude7.js",
+      "why": "The 'Report bug' control prefills a public GitHub issue and its own copy says the issue will be public, but the URL pointed at a private repository. Re-point it at the public repository that hosts this deploy.",
+      "find": "`https://github.com/SJTU-YONGFU-RESEARCH-GRP/spice-simulator-lab/issues/new`",
+      "replace": "`https://github.com/SJTU-YONGFU-RESEARCH-GRP/spice-simulator/issues/new`"
+    },
+    {
+      "id": "ngspice-cdn-integrity",
+      "file": "assets/src-CMkpkg0p.js",
+      "why": "The fallback loader fetches a third-party script and executes it in the application's origin with no integrity check. Verify the payload against a SHA-256 that equals the hash of the engine we self-host, and refuse to execute on mismatch.",
+      "requires": "async function Rt(e){",
+      "pinFrom": "https://cdn.jsdelivr.net/npm/@o.z/ngspice-wasm@0.0.0/ngspice.js",
+      "runtimeProbe": {
+        "loader": "Dt",
+        "hash": "Rt",
+        "marker": "ngspice WASM failed its SHA-256 pin",
+        "why": "scripts/egress-integrity.mjs lifts these two functions out of the shipped chunk and runs them, so the fail-closed branch is proven by execution rather than by a string match. The names are minified and belong to this artifact revision; a rebuild that renames them makes the probe exit 3 instead of passing quietly."
+      },
+      "edits": [
+        {
+          "find": "async function Dt(t){let n=await fetch(t);if(!n.ok)throw Error(`Failed to fetch ngspice WASM (${n.status}): ${t}`);let r=await n.text(),i=URL.createObjectURL(new Blob([r],{type:`text/javascript`}));",
+          "replace": "async function Dt(t,S){let n=await fetch(t);if(!n.ok)throw Error(`Failed to fetch ngspice WASM (${n.status}): ${t}`);let r=await n.text();if(S&&await Rt(r)!==S)throw Error(`ngspice WASM failed its SHA-256 pin (${t})`);let i=URL.createObjectURL(new Blob([r],{type:`text/javascript`}));"
+        },
+        {
+          "find": "try{return await Dt(Tt)}catch(t){",
+          "replace": "try{return await Dt(Tt,`{PIN}`)}catch(t){"
+        }
+      ]
+    }
+  ]
+}
