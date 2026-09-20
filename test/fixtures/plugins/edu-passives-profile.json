@@ -1,0 +1,51 @@
+{
+  "id": "edu-passives-v1",
+  "label": "Educational passives",
+  "devices": [
+    {
+      "id": "resistor",
+      "symbolId": "resistor",
+      "pins": ["1", "2"],
+      "parameters": [{ "id": "value", "type": "string", "required": true }],
+      "modelRequirements": [],
+      "modelStatus": "built-in",
+      "netlistEmitter": { "kind": "spice-primitive", "prefix": "R" }
+    },
+    {
+      "id": "capacitor",
+      "symbolId": "capacitor",
+      "pins": ["1", "2"],
+      "parameters": [{ "id": "value", "type": "string", "required": true }],
+      "modelRequirements": [],
+      "modelStatus": "built-in",
+      "netlistEmitter": { "kind": "spice-primitive", "prefix": "C" }
+    },
+    {
+      "id": "nmos",
+      "symbolId": "nmos",
+      "pins": ["D", "G", "S", "B"],
+      "parameters": [{ "id": "model", "type": "string", "required": true }],
+      "modelRequirements": ["nmos-level1"],
+      "modelStatus": "requires-model",
+      "netlistEmitter": { "kind": "spice-primitive", "prefix": "M" }
+    }
+  ],
+  "analyses": ["op", "dc", "ac", "tran"],
+  "capabilities": {
+    "waveforms": true,
+    "measurements": true,
+    "resultExport": true
+  },
+  "modelProfile": {
+    "profileId": "edu-passives-models-v1",
+    "devices": ["resistor", "capacitor", "nmos"],
+    "modelFiles": [{ "id": "nmos-level1", "path": "models/nmos.lib", "content": ".model nmos-level1 nmos" }],
+    "analyses": ["op", "dc", "ac", "tran"],
+    "temperatures": [-40, 27, 125],
+    "corners": ["typical"],
+    "inputLimits": { "maxNodes": 100 },
+    "outputLimits": { "maxSamples": 100000 },
+    "license": { "spdx": "MIT", "source": "fixture" },
+    "availability": "available"
+  }
+}

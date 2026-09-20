@@ -56,6 +56,11 @@ netlist/provenance, stale-result detection, and result bundles) is documented
 in [`docs/WORKFLOW_ARTIFACTS.md`](docs/WORKFLOW_ARTIFACTS.md) and tested with
 `npm run test:workflow-artifacts`.
 
+The second-part plugin/profile/backend contract is documented in
+[`docs/PLUGIN_BACKENDS.md`](docs/PLUGIN_BACKENDS.md) and tested with
+`npm run test:plugin-backend`. It is offline and deterministic; it does not
+claim that the unavailable editor bundle has been rewired to a real solver.
+
 `npm run release:dry` and the publish script are intended for WSL because the
 source build uses `pnpm` and Bash. `scripts/publish-editor-pages.sh --no-push`
 now performs the full build and local commit without contacting the remote;
