@@ -46,3 +46,25 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./site
           force_orphan: true
+
+  # Runtime smoke test. The artifact guard above proves the bundle's references
+  # and shell are coherent, but it cannot see runtime behavior: a build can pass
+  # every static check and still throw on first interaction (the A7 defect --
+  # 31 JSX call sites compiled to (void 0)( -- shipped a site that loaded fine
+  # on the home page yet crashed the whole editor when "Run" was pressed, and the
+  # guard stayed green). This job loads the page in headless Chrome, opens an
+  # example, runs the simulation, and fails the build if it does not finish with
+  # zero uncaught errors. It is the automated form of the A7 browser check.
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: browser-actions/setup-chrome@v2
+        id: chrome
+      - name: Runtime smoke test
+        run: node scripts/smoke-test.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}

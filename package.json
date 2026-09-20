@@ -8,6 +8,7 @@
   "scripts": {
     "check:artifacts": "node scripts/check-artifacts.mjs",
     "patch:jsx": "node scripts/patch-jsx-callsites.mjs",
+    "smoke": "node scripts/smoke-test.mjs",
     "preview": "node scripts/serve-local.mjs",
     "publish:editor": "bash scripts/publish-editor-pages.sh",
     "release": "bash scripts/release.sh",
