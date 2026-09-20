@@ -44,7 +44,12 @@
  *      function that no longer exists would turn a missing check into a
  *      crash-on-fallback.
  *   3. A repair is skipped when its replacement is already present and its
- *      anchor is gone, which makes the script idempotent.
+ *      anchor is gone, which makes the script idempotent. An INSERTION -- an edit
+ *      that adds something next to an existing anchor instead of consuming it --
+ *      can never reach that state, because it keeps its anchor on purpose, so
+ *      such a repair declares a `marker` instead: a string inside every
+ *      replacement that is absent before the repair and present exactly once
+ *      after. The marker decides, not the shape of the anchor.
  *   4. After patching, every replacement is re-counted as exactly one. A write
  *      only happens when all of a file's edits are in a consistent state.
  *
@@ -174,6 +179,22 @@ function main() {
       }
     }
 
+    // A repair may declare `marker`: a string contained in every replacement,
+    // absent before the repair and present exactly once after it. It exists for
+    // insertions. The default rule -- "the replacement is present once and the
+    // anchor is gone" -- only settles an edit that CONSUMES its anchor; an edit
+    // that keeps one tag and adds another beside it leaves the anchor in place,
+    // so the shape test would call it "to apply" on every run and write a second
+    // copy. A marker is a statement about the file, so it is checked below
+    // rather than inferred from the strings.
+    const marker = repair.marker ?? null;
+    if (marker !== null && repair.edits.some((e) => !e.replace.includes(marker))) {
+      problems.push(label + ': marker ' + JSON.stringify(marker) +
+        ' is not contained in every replacement, so it cannot report whether the edit applied');
+      broken += 1;
+      continue;
+    }
+
     // Resolve every edit before touching the file, so a file is never left
     // half-patched.
     const resolved = [];
@@ -184,6 +205,22 @@ function main() {
       const nFind = count(text, find);
       const nReplace = count(text, replace);
       const nReplaceFind = count(replace, find);
+      if (marker !== null) {
+        const nMarker = count(text, marker);
+        if (nMarker === 1) {
+          resolved.push({ i, find, replace, state: 'already applied' });
+          continue;
+        }
+        if (nMarker === 0 && nFind === 1) {
+          resolved.push({ i, find, replace, state: 'to apply' });
+          continue;
+        }
+        problems.push(label + ' edit #' + i + ': marker ' + JSON.stringify(marker) + ' occurs ' +
+          nMarker + ' time(s) while its anchor occurs ' + nFind +
+          ' -- this tree is neither repaired nor repairable by this edit');
+        unusable = true;
+        continue;
+      }
       if (nReplace === 1 && nFind === 0) {
         resolved.push({ i, find, replace, state: 'already applied' });
         continue;
@@ -197,7 +234,7 @@ function main() {
       const note = nFind === 0
         ? 'anchor not found'
         : 'anchor is not unique (' + nFind + ' occurrences)' +
-          (nReplaceFind > 0 ? '; note the replacement contains the anchor, so it can never settle' : '');
+          (nReplaceFind > 0 ? '; note the replacement contains the anchor, so it can never settle -- declare a marker instead' : '');
       problems.push(label + ' edit #' + i + ': ' + note + ' -- ' + JSON.stringify(find.slice(0, 90)) + '...');
       unusable = true;
     }

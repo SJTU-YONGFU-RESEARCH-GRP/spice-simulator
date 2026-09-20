@@ -190,6 +190,17 @@
         "method": "npm registry GET /@o.z%2Fngspice-wasm for versions; downloaded the jsDelivr artifact and hashed it; hashed site/vendor/ngspice.js",
         "result": "versions=[0.0.0], latest=0.0.0; CDN sha256 == vendor sha256 == the pinned hex"
       }
+    },
+    {
+      "url": "https://cdn.jsdelivr.net",
+      "role": "remote-script",
+      "reachable": true,
+      "evidence": "site/index.html and site/404.html -- the bare origin named by the shell's Content-Security-Policy in script-src and connect-src. It is the same origin as the target above and exists for the same reason: the browser executor must still be able to load and fetch the ngspice fallback when the self-hosted /spice-simulator/vendor/ngspice.js cannot be reached. Listing it here is not a formality -- check 11 refuses any origin in the policy that the manifest does not classify, so the allowlist cannot grow without an audit. What may actually EXECUTE from this origin is constrained by the SHA-256 pin, not by the policy: the policy decides whether the request is allowed at all, repairs.ngspice-cdn-integrity decides whether the bytes are ours.",
+      "verified": {
+        "checkedAt": "2026-09-20",
+        "method": "the origin of the pinned artifact target above; no separate request is made to the bare origin",
+        "result": "same origin as https://cdn.jsdelivr.net/npm/@o.z/ngspice-wasm@0.0.0/ngspice.js, whose bytes were downloaded and hashed"
+      }
     }
   ],
   "forbidden": [

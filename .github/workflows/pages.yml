@@ -71,6 +71,13 @@ jobs:
       # cannot pass for a working one.
       - name: Prove the outbound checks are not vacuous (mutation test)
         run: node scripts/outbound-repair.negctl.mjs
+      # The shell documents decide every origin the page may load from. Check 11
+      # asserts the policy is present, that its inline-script hash still
+      # re-derives from the committed bytes, and that no origin is named which
+      # the outbound manifest has not classified. This step breaks each of those
+      # claims in turn and requires the guard to notice.
+      - name: Prove the shell-policy checks are not vacuous (mutation test)
+        run: node scripts/csp-guard.negctl.mjs
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -109,5 +116,22 @@ jobs:
       # behaviour, and the two fail independently.
       - name: Storage-denied resilience
         run: node scripts/storage-resilience.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # A policy is worth shipping only if it is enforced AND does not break the
+      # application, and both are behavioural. This loads the deployed shell
+      # under its own policy, opens an example and runs a simulation, and
+      # requires zero Content-Security-Policy violations -- asserting first that
+      # the violation collector works, so a clean run cannot be a blind one.
+      - name: Content-Security-Policy conformance
+        run: node scripts/csp-conformance.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # And the other direction: the same harness, with an inline script that has
+      # no matching hash and a script from an origin the policy does not name,
+      # must SEE both violations and confirm the injected code never ran. Without
+      # this, "zero violations" could just mean the collector is deaf.
+      - name: Prove the policy is enforced, not decorative
+        run: node scripts/csp-conformance.mjs --self-test --require
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}

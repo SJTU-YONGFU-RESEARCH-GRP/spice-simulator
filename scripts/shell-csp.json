@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "$comment": "The Content-Security-Policy for the committed deploy shell. site/ is a build artifact whose editor sources are not in any public repository, so a rebuild would drop the policy and return the page to trusting every origin, with nothing in the tree to notice. Consumed by scripts/check-artifacts.mjs check 11 (the policy must be present, its inline-script hash must re-derive from the file, and every origin it names must already be classified in outbound-manifest.json) and by scripts/patch-outbound.mjs, which is manifest-generic. Both repairs declare a marker because they INSERT a tag next to an anchor they keep -- the patcher's default idempotence rule only settles edits that consume their anchor.",
+  "$how": "Applied with: node scripts/patch-outbound.mjs --manifest=scripts/shell-csp.json (npm run patch:csp). Proven at runtime by: node scripts/csp-conformance.mjs.",
+  "$shape": "shellDocuments and requiredSources are check 11's contract, kept separate from repairs on purpose: repairs are the MECHANISM that writes the policy, these are the CLAIM about what must be true. Deleting a repair therefore fails the check instead of silencing it. Source tokens are compared exactly, so 'wasm-unsafe-eval' does not satisfy a forbidden 'unsafe-eval' -- which is the whole point of listing it as forbidden.",
+  "policy": "default-src 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; script-src 'self' 'sha256-HNwf/9JV/vUpJrpchZQL+HkGb4bJH895PsHm3EoIoFI=' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://cdn.jsdelivr.net data: blob:; worker-src 'self' blob:; manifest-src 'self'; media-src 'self' data: blob:; frame-src 'self' blob: data:",
+  "inlineScriptSha256": "sha256-HNwf/9JV/vUpJrpchZQL+HkGb4bJH895PsHm3EoIoFI=",
+  "shellDocuments": [
+    "index.html",
+    "404.html"
+  ],
+  "requiredDirectives": [
+    "default-src",
+    "base-uri",
+    "object-src",
+    "form-action",
+    "script-src",
+    "style-src",
+    "img-src",
+    "font-src",
+    "connect-src",
+    "worker-src",
+    "manifest-src",
+    "media-src",
+    "frame-src"
+  ],
+  "requiredSources": {
+    "default-src": [
+      "'none'"
+    ],
+    "object-src": [
+      "'none'"
+    ],
+    "base-uri": [
+      "'none'"
+    ],
+    "form-action": [
+      "'none'"
+    ],
+    "script-src": [
+      "'self'",
+      "'wasm-unsafe-eval'"
+    ],
+    "style-src": [
+      "'self'"
+    ],
+    "font-src": [
+      "'self'"
+    ],
+    "manifest-src": [
+      "'self'"
+    ],
+    "worker-src": [
+      "'self'",
+      "blob:"
+    ],
+    "img-src": [
+      "'self'"
+    ],
+    "connect-src": [
+      "'self'"
+    ],
+    "media-src": [
+      "'self'"
+    ],
+    "frame-src": [
+      "'self'"
+    ]
+  },
+  "forbiddenSources": {
+    "script-src": [
+      "'unsafe-eval'",
+      "'unsafe-inline'",
+      "'strict-dynamic'",
+      "*",
+      "http:",
+      "https:",
+      "data:"
+    ],
+    "style-src": [
+      "http:",
+      "https:"
+    ],
+    "object-src": [
+      "*",
+      "http:",
+      "https:"
+    ],
+    "default-src": [
+      "*"
+    ]
+  },
+  "targets": [],
+  "repairs": [
+    {
+      "id": "shell-csp-index",
+      "file": "index.html",
+      "why": "site/index.html and site/404.html decide everything the page may load, and until now they named nothing: an injected <script src> from any origin would have run with the same authority as the editor's own code, beside a WASM engine and the user's locally stored projects. This adds the policy as a meta tag, placed immediately after <meta charset> so it is parsed before the first resource-loading tag. Directive set was DERIVED from measurement, not copied from a template: scripts/csp-conformance.mjs served this artifact under the policy in a real browser, opened an example circuit and ran an analog simulation, and every directive here is either one the run needed or one that closes a surface the run proved is unused. 'wasm-unsafe-eval' is required (ngspice instantiates a WebAssembly module) and 'unsafe-eval' is deliberately NOT granted: a whole-tree scan found no eval or new Function outside a try/catch feature probe, so the policy costs at most zod's JIT schema path. object-src 'none' is safe because nothing in the artifact constructs an <object> or <embed>. The 'sha256-' source is the hash of this file's own inline theme bootstrap, and check 11 re-derives it from the bytes on every run, so editing that script without updating the policy fails the publish gate. https://cdn.jsdelivr.net is the only origin named, and it is the ngspice fallback the outbound manifest already classifies as a remote-script target with an integrity pin; check 11 fails any origin added here that the manifest does not classify.",
+      "marker": "http-equiv=\"Content-Security-Policy\"",
+      "edits": [
+        {
+          "find": "    <meta charset=\"UTF-8\" />",
+          "replace": "    <meta charset=\"UTF-8\" />\n    <meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; script-src 'self' 'sha256-HNwf/9JV/vUpJrpchZQL+HkGb4bJH895PsHm3EoIoFI=' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://cdn.jsdelivr.net data: blob:; worker-src 'self' blob:; manifest-src 'self'; media-src 'self' data: blob:; frame-src 'self' blob: data:\" />"
+        }
+      ]
+    },
+    {
+      "id": "shell-csp-404",
+      "file": "404.html",
+      "why": "site/index.html and site/404.html decide everything the page may load, and until now they named nothing: an injected <script src> from any origin would have run with the same authority as the editor's own code, beside a WASM engine and the user's locally stored projects. This adds the policy as a meta tag, placed immediately after <meta charset> so it is parsed before the first resource-loading tag. Directive set was DERIVED from measurement, not copied from a template: scripts/csp-conformance.mjs served this artifact under the policy in a real browser, opened an example circuit and ran an analog simulation, and every directive here is either one the run needed or one that closes a surface the run proved is unused. 'wasm-unsafe-eval' is required (ngspice instantiates a WebAssembly module) and 'unsafe-eval' is deliberately NOT granted: a whole-tree scan found no eval or new Function outside a try/catch feature probe, so the policy costs at most zod's JIT schema path. object-src 'none' is safe because nothing in the artifact constructs an <object> or <embed>. The 'sha256-' source is the hash of this file's own inline theme bootstrap, and check 11 re-derives it from the bytes on every run, so editing that script without updating the policy fails the publish gate. https://cdn.jsdelivr.net is the only origin named, and it is the ngspice fallback the outbound manifest already classifies as a remote-script target with an integrity pin; check 11 fails any origin added here that the manifest does not classify.",
+      "marker": "http-equiv=\"Content-Security-Policy\"",
+      "edits": [
+        {
+          "find": "    <meta charset=\"UTF-8\" />",
+          "replace": "    <meta charset=\"UTF-8\" />\n    <meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; script-src 'self' 'sha256-HNwf/9JV/vUpJrpchZQL+HkGb4bJH895PsHm3EoIoFI=' 'wasm-unsafe-eval' blob: https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://cdn.jsdelivr.net data: blob:; worker-src 'self' blob:; manifest-src 'self'; media-src 'self' data: blob:; frame-src 'self' blob: data:\" />"
+        }
+      ]
+    }
+  ]
+}

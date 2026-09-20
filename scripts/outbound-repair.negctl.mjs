@@ -36,6 +36,7 @@ const REPO_ROOT = resolve(HERE, '..');
 const CHECK = join(HERE, 'check-artifacts.mjs');
 const PROBE = join(HERE, 'egress-integrity.mjs');
 const MANIFEST = join(HERE, 'outbound-manifest.json');
+const SHELL_CSP = join(HERE, 'shell-csp.json');
 
 const INDEX_FILE = 'assets/index-7P_aude7.js';
 const ENGINE_FILE = 'assets/src-CMkpkg0p.js';
@@ -121,7 +122,16 @@ function mutateEngine(text, mutation) {
  */
 function buildTree(dir, manifest, { defect = null, engineMutation = null, engineFrom = 'repair' } = {}) {
   mkdirSync(join(dir, 'assets'), { recursive: true });
-  writeFileSync(join(dir, 'index.html'), '<!doctype html><title>negctl</title>\n', 'utf8');
+  // A miniature but VALID deploy shell. The checks that are not under test here
+  // still run, so the tree has to be coherent for them too: the policy is read
+  // out of the shell-csp manifest rather than hard-coded, which keeps this
+  // miniature in step with check 11 whatever the policy later becomes.
+  const shell = load(SHELL_CSP);
+  const policyTag = '<meta http-equiv="Content-Security-Policy" content="' + shell.policy + '" />';
+  for (const doc of shell.shellDocuments ?? ['index.html']) {
+    writeFileSync(join(dir, doc),
+      '<!doctype html><meta charset="UTF-8" />' + policyTag + '<title>negctl</title>\n', 'utf8');
+  }
 
   const link = (manifest.repairs ?? []).find((r) => r.id === 'bug-report-link');
   const forbidden = (manifest.forbidden ?? [])[0]?.url ?? '';
@@ -170,7 +180,7 @@ function main() {
       return 2;
     }
   }
-  for (const p of [CHECK, PROBE, MANIFEST]) {
+  for (const p of [CHECK, PROBE, MANIFEST, SHELL_CSP]) {
     if (!existsSync(p)) {
       console.error('missing ' + p);
       return 2;

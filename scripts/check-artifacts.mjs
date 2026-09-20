@@ -55,7 +55,17 @@
  *                   2026-09-20 six such reads sat in React initializers and the
  *                   error boundary replaced the whole editor with its crash
  *                   screen. See checkStorageAccess.
- *  11. (meta)       Accepted deviations that matched nothing. Printed only when
+ *  11. shellCsp    The deploy shell must carry a Content-Security-Policy, and
+ *                   the policy must still describe THIS artifact: both shell
+ *                   documents hold the manifest's policy, every executable
+ *                   inline script's hash is re-derived from the document's own
+ *                   bytes, script-src may not gain 'unsafe-eval' or
+ *                   'unsafe-inline', and every origin the policy names must
+ *                   already be classified in the outbound manifest. This is the
+ *                   only check that constrains what the page may load at all --
+ *                   without it the shell names no origin and any injected script
+ *                   runs with the editor's own authority. See checkShellCsp.
+ *  12. (meta)       Accepted deviations that matched nothing. Printed only when
  *                   there are any, and never silenceable.
  *
  * The rule in (1) is deliberately narrow: a reference is reported only when
@@ -80,6 +90,8 @@
  *                  Default: scripts/known-deviations.json when it exists.
  *   --outbound=<file>  Manifest of audited outbound targets for check 9.
  *                  Default: scripts/outbound-manifest.json when it exists.
+ *   --csp=<file>   Manifest of the deploy shell's Content-Security-Policy for
+ *                  check 11. Default: scripts/shell-csp.json when it exists.
  *   --json=<file>  Also write findings as JSON.
  *
  * Exit codes: 0 clean or only accepted deviations, 1 findings, 2 usage or IO
@@ -127,7 +139,7 @@ const SW_SHELL = /new URL\(\s*"([^"]*)"\s*,\s*scope\s*\)/g;
 function parseArgs(argv) {
   const out = {
     site: join(REPO_ROOT, 'site'), base: null, strict: false, json: null, accept: null,
-    outbound: null,
+    outbound: null, csp: null,
   };
   for (const arg of argv) {
     // An empty value would silently resolve to the current directory and scan
@@ -138,6 +150,7 @@ function parseArgs(argv) {
     else if (arg === '--strict') out.strict = true;
     else if (arg.startsWith('--accept=')) out.accept = resolve(REPO_ROOT, arg.slice('--accept='.length));
     else if (arg.startsWith('--outbound=')) out.outbound = resolve(REPO_ROOT, arg.slice('--outbound='.length));
+    else if (arg.startsWith('--csp=')) out.csp = resolve(REPO_ROOT, arg.slice('--csp='.length));
     else if (arg.startsWith('--json=')) out.json = arg.slice('--json='.length);
     else return { error: 'unknown argument: ' + arg };
   }
@@ -1020,6 +1033,253 @@ function checkStorageAccess(site) {
 }
 
 /**
+ * A Content-Security-Policy delivered as a meta tag. The quoted value is read
+ * with a backreference rather than with `[^"']*`: a policy is full of single
+ * quotes ('self', 'sha256-...'), and an exclusion set of both quote characters
+ * stops at the first one, making a shell that HAS a policy read as one that has
+ * none.
+ */
+const CSP_META_TAG =
+  /<meta\s+http-equiv=(["'])Content-Security-Policy\1\s+content=(["'])([\s\S]*?)\2\s*\/?>/i;
+/** Every inline <script>, with its attribute string, so its type can be read. */
+const INLINE_SCRIPT_TAG = /<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/gi;
+const SCRIPT_TYPE_ATTR = /\btype\s*=\s*(["'])([^"']*)\1/i;
+// A data block (application/ld+json and friends) is never executed, so
+// script-src does not cover it and its hash must not be demanded.
+const JS_SCRIPT_TYPE = /^(?:|module|text\/javascript|application\/javascript)$/i;
+const POLICY_ORIGIN = /https?:\/\/[A-Za-z0-9.-]+(?::\d+)?/g;
+
+function parsePolicy(policy) {
+  const map = new Map();
+  for (const part of policy.split(';')) {
+    const bits = part.trim().split(/\s+/).filter(Boolean);
+    if (bits.length === 0) continue;
+    map.set(bits[0].toLowerCase(), bits.slice(1));
+  }
+  return map;
+}
+
+/**
+ * Check 11: the deploy shell carries a Content-Security-Policy, and the policy
+ * still describes this artifact.
+ *
+ * index.html and 404.html are committed build products, and they decide every
+ * origin the page may load from. Until 2026-09-20 they named none, which makes
+ * the editor's origin -- a WASM engine, the user's locally stored projects, a
+ * service worker -- equally available to any script that manages to get
+ * injected from anywhere. A policy is the only control in this artifact that
+ * constrains that, and it is exactly the kind of control a rebuild silently
+ * deletes, so it is guarded here.
+ *
+ * Three things are asserted, and the third is what stops the check from being a
+ * string comparison:
+ *
+ *   1. Both shell documents carry the policy, and it is the manifest's policy.
+ *      A hand-edit to either document is a finding, not a silent divergence.
+ *   2. The policy still contains what makes it worth having: 'none' where
+ *      nothing is needed, 'self' where the app's own chunks are, and NOT
+ *      'unsafe-eval' or 'unsafe-inline' in script-src -- the two concessions
+ *      that would turn it into decoration. Those are read from the manifest,
+ *      so the shape of the policy is declared in one place.
+ *   3. Every inline script on the page is hash-approved by the policy, and that
+ *      hash is RE-DERIVED FROM THE DOCUMENT'S BYTES on every run. Editing the
+ *      inline theme bootstrap without updating the policy would leave the page
+ *      blocked at the first script and render nothing; the check fails first and
+ *      prints the corrected policy. This is the same "re-derive, never trust a
+ *      copy" rule that check 9 applies to the engine pin.
+ *
+ * A fourth rule is what keeps the allowlist honest: every origin the policy
+ * names must already be classified in the outbound manifest. Adding an origin to
+ * the policy is therefore not a way to make a finding go away -- it fails until
+ * someone classifies that origin outbound.
+ */
+function checkShellCsp(site, cspManifestPath, outboundManifestPath) {
+  const out = { status: 'checked', documents: [], findings: [], notes: [] };
+  if (cspManifestPath === null || !existsSync(cspManifestPath)) {
+    out.status = 'unavailable';
+    out.notes.push('no shell-csp manifest (pass --csp=<file> to enable this check)');
+    return out;
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(cspManifestPath, 'utf8'));
+  } catch (e) {
+    out.status = 'unreadable';
+    out.notes.push('cannot parse ' + cspManifestPath + ': ' + e.message);
+    return out;
+  }
+
+  const documents = manifest.shellDocuments ?? [];
+  if (documents.length === 0) {
+    // An empty document list would make every rule below vacuous while still
+    // printing "ok", which is the failure mode this guard exists to prevent.
+    out.findings.push({
+      key: 'csp-vacuous', ref: slash(cspManifestPath.slice(REPO_ROOT.length + 1)),
+      notes: ['shellDocuments is empty, so no document is required to carry a policy'],
+    });
+    return out;
+  }
+
+  const classified = [];
+  if (outboundManifestPath && existsSync(outboundManifestPath)) {
+    try {
+      for (const t of JSON.parse(readFileSync(outboundManifestPath, 'utf8')).targets ?? []) {
+        classified.push(t.url);
+      }
+    } catch { /* check 9 reports an unreadable outbound manifest */ }
+  }
+
+  const policiesSeen = [];
+  for (const file of documents) {
+    const path = join(site, file.split('/').join('\\'));
+    if (!existsSync(path)) {
+      // A declared shell document that is not here cannot be carrying a policy.
+      // Reported, never skipped: a tree that lost its 404 page should say so
+      // rather than leave the policy unverified on that half of the shell.
+      out.findings.push({
+        key: 'csp-document-absent:' + file, ref: file,
+        notes: [
+          'the manifest declares this shell document, and it is not in this tree',
+          'so nothing here verifies that it carries a policy',
+        ],
+      });
+      continue;
+    }
+    const html = readFileSync(path, 'utf8');
+    const m = CSP_META_TAG.exec(html);
+    if (!m) {
+      out.findings.push({
+        key: 'csp-missing:' + file, ref: file,
+        notes: [
+          'this document carries no Content-Security-Policy, so the page trusts every origin',
+          'repair: node scripts/patch-outbound.mjs --manifest=scripts/shell-csp.json',
+        ],
+      });
+      continue;
+    }
+    const policy = m[3];
+    policiesSeen.push({ file, policy });
+    out.documents.push({ file, length: policy.length });
+
+    if (policy !== manifest.policy) {
+      out.findings.push({
+        key: 'csp-drift:' + file, ref: file,
+        notes: [
+          'the policy in the artifact is not the policy in the manifest, so one was edited by hand',
+          'in the artifact: ' + policy,
+          'in the manifest: ' + (manifest.policy ?? '(absent)'),
+        ],
+      });
+    }
+
+    // Every executable inline script needs its own hash, or the browser refuses
+    // it and the page loads with that script missing.
+    INLINE_SCRIPT_TAG.lastIndex = 0;
+    let s;
+    while ((s = INLINE_SCRIPT_TAG.exec(html)) !== null) {
+      const [, attrs, body] = s;
+      const typeAttr = SCRIPT_TYPE_ATTR.exec(attrs);
+      if (typeAttr && !JS_SCRIPT_TYPE.test(typeAttr[2].trim())) continue;
+      const hash = createHash('sha256').update(body, 'utf8').digest('base64');
+      const source = "'sha256-" + hash + "'";
+      if (policy.includes(source)) {
+        out.notes.push('inline script hash re-derived from ' + file + ': ' + source +
+          ' (' + Buffer.byteLength(body, 'utf8') + ' bytes)');
+        continue;
+      }
+      out.findings.push({
+        key: 'csp-inline-unhashed:' + file + '@' + s.index, ref: file + '@' + s.index,
+        notes: [
+          'an executable inline script is not approved by the policy, so the browser refuses it',
+          'its hash is ' + source + ' (' + Buffer.byteLength(body, 'utf8') + ' bytes)',
+          'policy with the correction:\n' + policy.replace(/('sha256-[^']*'|$)/, source),
+        ],
+      });
+    }
+  }
+
+  if (policiesSeen.length > 1) {
+    const first = policiesSeen[0];
+    for (const other of policiesSeen.slice(1)) {
+      if (other.policy === first.policy) continue;
+      out.findings.push({
+        key: 'csp-inconsistent:' + other.file, ref: other.file,
+        notes: [
+          'this shell document does not carry the same policy as ' + first.file,
+          'two shells for one site means the laxer one is the real policy',
+        ],
+      });
+    }
+  }
+
+  const policy = policiesSeen[0]?.policy;
+  if (policy === undefined) return out;
+  const directives = parsePolicy(policy);
+
+  for (const name of manifest.requiredDirectives ?? []) {
+    if (directives.has(name)) continue;
+    out.findings.push({
+      key: 'csp-directive-missing:' + name, ref: name,
+      notes: ['the policy has no ' + name + ' directive, so it falls back to default-src'],
+    });
+  }
+
+  for (const [name, required] of Object.entries(manifest.requiredSources ?? {})) {
+    const have = directives.get(name);
+    if (have === undefined) continue; // already reported by requiredDirectives
+    for (const source of required) {
+      if (have.includes(source)) continue;
+      const replacement = "'sha256-…'";
+      out.findings.push({
+        key: 'csp-source-missing:' + name + ':' + source, ref: name + ' ' + source,
+        notes: [
+          name + ' does not allow ' + source +
+            (source === replacement ? ', so the inline script is refused' : ''),
+        ],
+      });
+    }
+  }
+
+  for (const [name, forbidden] of Object.entries(manifest.forbiddenSources ?? {})) {
+    const have = directives.get(name);
+    if (have === undefined) continue;
+    for (const source of forbidden) {
+      if (!have.includes(source)) continue;
+      out.findings.push({
+        key: 'csp-source-forbidden:' + name + ':' + source, ref: name + ' ' + source,
+        notes: [
+          name + ' allows ' + source + ', which is the concession the policy exists to avoid',
+          'this usually means it was added to silence a violation rather than to fix one -- ' +
+            'see scripts/csp-conformance.mjs, which reports what is blocked and why',
+        ],
+      });
+    }
+  }
+
+  POLICY_ORIGIN.lastIndex = 0;
+  let o;
+  const seen = new Set();
+  while ((o = POLICY_ORIGIN.exec(policy)) !== null) {
+    const origin = o[0];
+    if (seen.has(origin)) continue;
+    seen.add(origin);
+    if (classified.some((u) => u.startsWith(origin))) {
+      out.notes.push('origin ' + origin + ' is classified in the outbound manifest');
+      continue;
+    }
+    out.findings.push({
+      key: 'csp-unclassified-origin:' + origin, ref: origin,
+      notes: [
+        'the policy names this origin but the outbound manifest classifies nothing at it, ' +
+          'so the allowlist is wider than the audit',
+        'classify it in scripts/outbound-manifest.json first, with evidence',
+      ],
+    });
+  }
+  return out;
+}
+
+/**
  * Render a keyed finding list, separating accepted deviations from live ones.
  *
  * An accepted entry is deliberately still printed. The point of the list is
@@ -1057,6 +1317,17 @@ async function main() {
     return 2;
   }
 
+  // A manifest that was asked for by name and is not there is a usage error, not
+  // a quiet "check skipped". Otherwise deleting the manifest would be a way to
+  // silence the check that reads it -- the check would print "--" where it used
+  // to print "ok", and nothing would fail.
+  for (const [flag, p] of [['--outbound', args.outbound], ['--csp', args.csp]]) {
+    if (p !== null && !existsSync(p)) {
+      console.error(flag + ' was given but the file does not exist: ' + p);
+      return 2;
+    }
+  }
+
   const site = args.site;
   if (!existsSync(site) || !statSync(site).isDirectory()) {
     console.error('site directory not found: ' + site);
@@ -1089,6 +1360,10 @@ async function main() {
   const defaultOutbound = join(REPO_ROOT, 'scripts', 'outbound-manifest.json');
   const outboundPath = args.outbound ?? (existsSync(defaultOutbound) ? defaultOutbound : null);
   push('  outbound = ' + (outboundPath ?? 'none'));
+
+  const defaultCsp = join(REPO_ROOT, 'scripts', 'shell-csp.json');
+  const cspPath = args.csp ?? (existsSync(defaultCsp) ? defaultCsp : null);
+  push('  csp      = ' + (cspPath ?? 'none'));
 
   const refs = checkBaseRefs(site, normalised, args.strict);
   push('  scanned ' + refs.scanned + ' text files, ' + (refs.bytes / 1024).toFixed(0) + ' KiB');
@@ -1127,6 +1402,7 @@ async function main() {
   const jsxSites = checkJsxCallSites(site);
   const egress = checkOutboundEgress(site, outboundPath);
   const storage = checkStorageAccess(site);
+  const csp = checkShellCsp(site, cspPath, outboundPath);
   const jsxFactoryList = jsxFactory
     .filter((r) => r.failures.length > 0)
     .map((r) => ({
@@ -1145,7 +1421,7 @@ async function main() {
   const matched = new Set();
   const lists = [
     escapedList, missingList, externalList, jsxList, shellList, jsxFactoryList,
-    jsxSites.findings, egress.findings, storage.findings,
+    jsxSites.findings, egress.findings, storage.findings, csp.findings,
   ];
   for (const list of lists) {
     for (const f of list) {
@@ -1260,9 +1536,24 @@ async function main() {
       'replaces the editor', accepted));
   }
 
+  push('');
+  push('11. shell Content-Security-Policy');
+  push('   (both shell documents must carry the policy, the policy must still be the ' +
+    'manifest\'s, every inline script\'s hash is re-derived from the document, and no ' +
+    'origin may be named that the outbound manifest does not classify)');
+  if (csp.status !== 'checked') {
+    push('  --  ' + csp.notes.join('; '));
+  } else if (csp.findings.length === 0) {
+    push('  ok  ' + csp.documents.length + ' shell document(s) carry an enforced policy');
+    for (const n of csp.notes) push('      ' + n);
+  } else {
+    push(...render(csp.findings, 'shell policy findings', null, accepted));
+    for (const n of csp.notes.slice(0, 6)) push('      ' + n);
+  }
+
   if (stale.length > 0) {
     push('');
-    push('11. stale accepted deviations');
+    push('12. stale accepted deviations');
     push(...render(stale, 'accepted entries that matched nothing', null, () => false));
   }
 
@@ -1293,6 +1584,13 @@ async function main() {
       jsxVoid0CallSites: jsxSites.findings.map((f) => ({ chunk: f.ref, notes: f.notes })),
       storageUnguarded: storage.findings.map((f) => ({ ref: f.ref, notes: f.notes })),
       shellMissing: shell.missing,
+      shellCsp: {
+        manifest: cspPath,
+        status: csp.status,
+        documents: csp.documents,
+        findings: csp.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
+        notes: csp.notes,
+      },
       outbound: {
         manifest: outboundPath,
         status: egress.status,

@@ -41,7 +41,18 @@
 //     a6a953b256fa <- 404.html                (identical shell, identical fix)
 // CACHE takes the surface chunk's digest again: with storage denied it was
 // App-*.js that took the whole application down on first paint.
-const CACHE = "icm-static-shell-1aa73603f3ae";
+//   2026-09-20, shell-csp repair (scripts/patch-outbound.mjs with
+//   --manifest=scripts/shell-csp.json, both shell documents):
+//     817dbac0b7a8 <- index.html  (S5: the deploy shell now carries a
+//                     Content-Security-Policy. Until now it named no origin at
+//                     all, so any script injected from anywhere -- a compromised
+//                     dependency, a tampered mirror, an inline payload -- ran
+//                     with the editor's own authority, beside a WASM engine and
+//                     the user's locally stored projects)
+//     817dbac0b7a8 <- 404.html    (identical shell, identical policy)
+// CACHE takes the shell document's digest: the policy IS the artifact, and a
+// returning client must not keep a cached copy that still names nothing.
+const CACHE = "icm-static-shell-817dbac0b7a8";
 
 function scopeUrl() {
   return new URL(self.registration.scope);
