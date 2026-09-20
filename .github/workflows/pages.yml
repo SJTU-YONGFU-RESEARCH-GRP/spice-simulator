@@ -78,6 +78,15 @@ jobs:
       # claims in turn and requires the guard to notice.
       - name: Prove the shell-policy checks are not vacuous (mutation test)
         run: node scripts/csp-guard.negctl.mjs
+      # The shell decides what may load; the worker decides what survives offline.
+      # Check 12 reads sw.js and asserts the shape its caching depends on: a
+      # response handed to cache.put() must be a clone taken before respondWith()
+      # claims the body, and the engine payload -- which arrives by fetch(), with
+      # an empty destination -- must be routed rather than precached at install.
+      # Both defects were real and both were invisible to every other check, so
+      # this step re-introduces them and requires the guard to name each one.
+      - name: Prove the worker-cache checks are not vacuous (mutation test)
+        run: node scripts/sw-cache.negctl.mjs --static-only
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -133,5 +142,27 @@ jobs:
       # this, "zero violations" could just mean the collector is deaf.
       - name: Prove the policy is enforced, not decorative
         run: node scripts/csp-conformance.mjs --self-test --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # Every step above serves the artifact with "Cache-Control: no-store", which
+      # the worker deliberately refuses to cache -- so none of them has ever
+      # exercised the worker's caching, and that is exactly where the bugs were:
+      # every put on the runtime route threw "Response body is already used", so
+      # the cache held only install()'s six shell entries, and the 6.88 MB engine
+      # was never routed there at all. Offline simulation worked only while the
+      # browser's HTTP cache happened to hold a fresh 7 MB body.
+      #
+      # This step serves the artifact the way the deploy does (public, max-age),
+      # then turns the network off AND disables the HTTP cache on the page and on
+      # the worker, and requires a simulation to finish. Under those conditions
+      # Cache Storage is the only possible source.
+      - name: Offline simulation
+        run: node scripts/offline-sim.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # And prove that test is not vacuous: the same two defects must be named by
+      # check 12 (static) and must kill the offline test (runtime).
+      - name: Prove the offline test is not vacuous (mutation test)
+        run: node scripts/sw-cache.negctl.mjs --require
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}

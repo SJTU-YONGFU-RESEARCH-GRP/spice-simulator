@@ -49,15 +49,23 @@ node scripts/outbound-repair.negctl.mjs
 node scripts/csp-conformance.mjs --require
 node scripts/csp-conformance.mjs --self-test --require
 node scripts/csp-guard.negctl.mjs
+node scripts/offline-sim.mjs --require
+node scripts/sw-cache.negctl.mjs --static-only
 ```
 
 or `npm run check:artifacts` / `npm run smoke` / `npm run check:storage` /
 `npm run check:numeric` / `npm run check:numeric:neg` / `npm run check:egress` /
-`npm run check:egress:neg` / `npm run check:csp` / `npm run check:csp:neg`.
+`npm run check:egress:neg` / `npm run check:csp` / `npm run check:csp:neg` /
+`npm run check:offline` / `npm run check:offline:neg:static`.
+
+`npm run preview` serves with `Cache-Control: no-store`, which is what you want
+while editing the artifact but which also stops the service worker from caching
+anything — so a preview cannot tell you whether the worker works. Pass
+`--cache=public` to reproduce the deploy's headers when that is the question.
 
 | Check | Question it answers |
 |---|---|
-| `check-artifacts.mjs` | Is the bundle self-consistent — do its references resolve, is there no development JSX runtime or folded-`undefined` call site, is every network target in the tree classified, is every storage read inside a `try`/`catch`, does the shell still carry its Content-Security-Policy? |
+| `check-artifacts.mjs` | Is the bundle self-consistent — do its references resolve, is there no development JSX runtime or folded-`undefined` call site, is every network target in the tree classified, is every storage read inside a `try`/`catch`, does the shell still carry its Content-Security-Policy, and does `sw.js` still have the shape its caching needs? |
 | `smoke-test.mjs` | Does the editor actually run — does a real simulation finish with zero uncaught errors? |
 | `storage-resilience.mjs` | Does the editor still render in a browser that **denies** storage? Loads the home page and an `?example=` deep link with `localStorage`/`sessionStorage` replaced by throwing getters — the failure mode of Safari private mode, blocked site data and partitioned iframes — and requires the editor, not the crash screen. |
 | `numeric-crosscheck.mjs` | Are the numbers **right** — does the shipped WASM agree with first-principles closed forms and with model-independent invariants (including for BSIM3/BSIM4, which have no closed form)? |
@@ -66,6 +74,8 @@ or `npm run check:artifacts` / `npm run smoke` / `npm run check:storage` /
 | `outbound-repair.negctl.mjs` | Would the outbound checks **notice** if they broke? Nine cases, incl. two controls, against deliberately weakened copies. |
 | `csp-conformance.mjs` | Is the shell's Content-Security-Policy **enforced** and does it leave the editor working? Boots the page, opens an example and runs a simulation under the shipped policy, requiring zero violations — after first proving the violation collector can see one (`--self-test` serves a deliberately violating page and requires both the violation to be observed and the injected code never to run). |
 | `csp-guard.negctl.mjs` | Would check 11 **notice** if it broke? Twelve cases against mutated copies of the real shell — a missing policy, a hand-edited policy, two shells that disagree, an inline script edited without updating its hash, `'unsafe-eval'`/`'unsafe-inline'`/`*` added to script-src, a dropped directive, an empty document list and an unaudited origin — each required to produce its own finding. |
+| `offline-sim.mjs` | Can the worker do its job? Serves the artifact with deploy-like cache headers, warms a simulation, then turns the network **and** the HTTP cache off — on the page and on the worker — and requires a second simulation to finish. Only Cache Storage can serve the 6.88 MB engine under those conditions. |
+| `sw-cache.negctl.mjs` | Would that test **notice**? Re-introduces the two defects that made the worker cache nothing (a response cloned inside the `caches.open()` callback; the engine unrouted because its `fetch()` has an empty `destination`) and requires **both** channels to catch them: check 12 names each defect, and `offline-sim.mjs` fails. `--static-only` runs just the source-level half, without a browser. |
 
 All ten run in CI before `site/` is published.
 

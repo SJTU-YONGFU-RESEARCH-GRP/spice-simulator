@@ -52,7 +52,21 @@
 //     817dbac0b7a8 <- 404.html    (identical shell, identical policy)
 // CACHE takes the shell document's digest: the policy IS the artifact, and a
 // returning client must not keep a cached copy that still names nothing.
-const CACHE = "icm-static-shell-817dbac0b7a8";
+//   2026-09-20, runtime-cache repair (this file):
+//     eb06299c334a <- the payload declaration in isEnginePayload() below
+//                     (two defects: every put on the runtime route threw
+//                     "Response body is already used" because the response was
+//                     cloned inside the caches.open() callback, past the point
+//                     where respondWith() had taken the body -- so nothing was
+//                     ever stored and only install()'s shellUrls() entries were
+//                     ever cached; and the engine payload, which arrives by
+//                     fetch() with an empty destination, was never routed here
+//                     at all -- see the comments at each site)
+// CACHE takes a digest of the payload declaration rather than of a file: the
+// artifact this repair changed is the worker itself, and a file cannot hash
+// itself. The declaration is the thing that decides what this cache holds.
+// Reproduce with: printf 'vendor/\nmodels/\n' | sha256sum | cut -c1-12
+const CACHE = "icm-static-shell-eb06299c334a";
 
 function scopeUrl() {
   return new URL(self.registration.scope);
@@ -97,6 +111,45 @@ self.addEventListener("activate", (event) => {
 function isStaticAsset(request) {
   return ["script", "style", "image", "font", "manifest"].includes(
     request.destination,
+  );
+}
+
+/**
+ * Directories, relative to this worker's scope, that hold the simulation
+ * engine rather than the shell.
+ *
+ * These are cached on first use, not at install. site/vendor/ngspice.js alone
+ * is ~7 MB of base64 WASM, so putting it in shellUrls() would make every
+ * visitor download the engine before they had asked to simulate anything --
+ * which is why it was never there.
+ *
+ * It was not on the runtime route either, and that was the defect. The
+ * application requests these files with fetch(), and a fetch() carries an
+ * empty request.destination, so isStaticAsset() -- which matches on
+ * destination -- declined them. The worker never stored them, and the engine
+ * payload consequently sat outside this cache entirely. Running a simulation
+ * offline still appeared to work, but only for as long as the browser's own
+ * HTTP cache happened to hold a fresh copy of a 7 MB body: a ten-minute
+ * window, under an eviction policy that is not ours to decide. Caching the
+ * shell so that the editor opens offline, while leaving the engine to the
+ * browser, makes the offline capability incidental rather than designed --
+ * and an editor that opens but cannot simulate is not the offline experience
+ * this worker exists to provide.
+ *
+ * A directory prefix is used instead of a file list so that a model file
+ * added to models/ later is covered without a second change here.
+ */
+const ENGINE_PAYLOAD_DIRS = ["vendor/", "models/"];
+
+function isEnginePayload(request) {
+  const url = new URL(request.url);
+  const scope = scopeUrl();
+  if (url.origin !== scope.origin) return false;
+  const scopePath = scope.pathname.replace(/\/?$/, "/");
+  if (!url.pathname.startsWith(scopePath)) return false;
+  const rel = url.pathname.slice(scopePath.length);
+  return ENGINE_PAYLOAD_DIRS.some(
+    (dir) => rel.startsWith(dir) && rel.length > dir.length,
   );
 }
 
@@ -150,9 +203,12 @@ self.addEventListener("fetch", (event) => {
       fetch(event.request)
         .then((response) => {
           if (response.ok) {
-            void caches
-              .open(CACHE)
-              .then((cache) => cache.put(scopeUrl(), response.clone()));
+            // Clone while this body is still ours. respondWith() hands the
+            // response to the client, so a clone taken any later -- inside the
+            // caches.open() callback, say -- throws "Response body is already
+            // used", which is exactly what this branch used to do.
+            const copy = response.clone();
+            void caches.open(CACHE).then((cache) => cache.put(scopeUrl(), copy));
           }
           return response;
         })
@@ -162,9 +218,12 @@ self.addEventListener("fetch", (event) => {
   }
 
   // Only same-origin static assets are cached. This intentionally excludes
-  // arbitrary GETs, imported files, Project downloads, and future APIs.
+  // arbitrary GETs, imported files, Project downloads, and future APIs. The
+  // engine payload is a same-origin GET whose destination is empty because it
+  // arrives by fetch() rather than by a resource tag, so it is matched by path
+  // instead -- see isEnginePayload().
   if (
-    isStaticAsset(event.request) &&
+    (isStaticAsset(event.request) || isEnginePayload(event.request)) &&
     new URL(event.request.url).origin === scopeUrl().origin
   ) {
     event.respondWith(
@@ -172,9 +231,14 @@ self.addEventListener("fetch", (event) => {
         if (cached) return cached;
         return fetch(event.request).then((response) => {
           if (response.ok && servesWhatWasAsked(event.request, response)) {
-            void caches
-              .open(CACHE)
-              .then((cache) => cache.put(event.request, response.clone()));
+            // Clone while this body is still ours -- see the navigation branch
+            // above. Until this was hoisted out of the callback, every put from
+            // this route threw "Response body is already used"; the promise was
+            // fire-and-forget, so the rejection went nowhere and the whole route
+            // silently stored nothing. The only entries this cache ever held
+            // were the ones install() added via shellUrls().
+            const copy = response.clone();
+            void caches.open(CACHE).then((cache) => cache.put(event.request, copy));
           }
           return response;
         });

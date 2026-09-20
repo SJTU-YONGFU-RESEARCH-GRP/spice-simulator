@@ -19,11 +19,22 @@
  *   --port=<n>     Default 8080
  *   --base=<path>  Default derived from package.json "homepage"
  *   --site=<dir>   Default <repo>/site
+ *   --cache=<mode> Default "no-store". "public" emulates the deploy's cache
+ *                  headers (Cache-Control: public, max-age=600) instead.
  *
  * Notes
  *   - Cache-Control: no-store on purpose. The artifact registers a service
  *     worker that serves scripts cache-first; a preview that lets the browser
  *     cache anything is a preview of yesterday's files.
+ *
+ *   - That convenience has a cost worth knowing about: the worker's own fetch
+ *     handler refuses to store a response whose Cache-Control says no-store
+ *     (see servesWhatWasAsked in site/sw.js). So under the default mode the
+ *     worker caches *nothing* and every offline/caching path in it goes
+ *     unexercised. --cache=public exists to lift that: it is the mode in which
+ *     the worker behaves as it does on the deploy, which is the only way to
+ *     test what it actually does there.
+ *
  *   - Unknown paths fall back to index.html only when the request looks like a
  *     document, so a missing .js still answers 404 instead of a HTML page that
  *     the browser would fail to parse as a module.
@@ -43,7 +54,7 @@ const flag = (name, fallback) => {
   return hit ? hit.slice(name.length + 3) : fallback;
 };
 if (argv.some((a) => a === '--help' || a === '-h')) {
-  console.log('usage: node scripts/serve-local.mjs [--port=8080] [--base=/spice-simulator/] [--site=<dir>]');
+  console.log('usage: node scripts/serve-local.mjs [--port=8080] [--base=/spice-simulator/] [--site=<dir>] [--cache=no-store|public]');
   process.exit(0);
 }
 
@@ -62,6 +73,17 @@ const port = Number(flag('port', '8080'));
 const base0 = flag('base', await deriveBase());
 const BASE = (base0.startsWith('/') ? base0 : '/' + base0).replace(/\/?$/, '/');
 const PREFIX = BASE.slice(0, -1); // "/spice-simulator"
+
+// "no-store" keeps the preview honest (you always see the files on disk).
+// "public" reproduces the deploy's headers so the service worker's caching
+// paths behave as they do in production; without it the worker caches nothing
+// and its offline behaviour cannot be tested at all.
+const CACHE_MODE = flag('cache', 'no-store');
+if (CACHE_MODE !== 'no-store' && CACHE_MODE !== 'public') {
+  console.error('unknown --cache=' + CACHE_MODE + ' (expected no-store or public)');
+  process.exit(2);
+}
+const CACHE_HEADER = CACHE_MODE === 'public' ? 'public, max-age=600' : 'no-store';
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -174,7 +196,7 @@ const server = createServer((req, res) => {
     res.writeHead(200, {
       'content-type': type,
       'content-length': size,
-      'cache-control': 'no-store',
+      'cache-control': CACHE_HEADER,
     });
     if (req.method === 'HEAD') { res.end(); return; }
     const stream = createReadStream(file);
@@ -200,12 +222,13 @@ server.listen(port, '127.0.0.1', () => {
   console.log('  SPICE simulator preview');
   console.log('  serving  ' + site);
   console.log('  mounted  ' + BASE + '   (the base is part of the artifact: do not open site/index.html directly)');
+  console.log('  cache    ' + CACHE_HEADER + (CACHE_MODE === 'public' ? '   (production-like: the service worker can actually cache)' : ''));
   console.log('');
   console.log('  ' + url);
   console.log('  example circuit:  ' + url + '?example=common-source-amplifier');
   console.log('');
-  console.log('  Ctrl+C to stop. First load pulls ~7 MB of ngspice WASM; /api/* 404s are expected');
-  console.log('  (the deploy has no backend). If you have opened the site from this origin');
+  console.log('  Ctrl+C to stop. Running a simulation pulls ~7 MB of base64 ngspice WASM; /api/* 404s are');
+  console.log('  expected (the deploy has no backend). If you have opened the site from this origin');
   console.log('  before, unregister the service worker in DevTools or use a fresh profile --');
   console.log('  it serves scripts cache-first.');
   console.log('');

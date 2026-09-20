@@ -9,6 +9,8 @@ node_modules/
 _tmp_quiz_challenge_platform/
 smoke-result.json
 numeric-crosscheck-result.json
+offline-sim-result.json
+sw-cache-negctl-result.json
 
 # Legacy vanilla simulator (deleted from this repo)
 # NOTE: the leading "/" below is deliberate - those patterns are anchored to the

@@ -1280,6 +1280,175 @@ function checkShellCsp(site, cspManifestPath, outboundManifestPath) {
 }
 
 /**
+ * Check 12: the service worker's cache contract.
+ *
+ * This worker shipped for a long time with two defects that no static reading
+ * would notice, because both of them looked right:
+ *
+ *   1. Every `cache.put()` on the runtime route passed `response.clone()`
+ *      evaluated **inside** the `caches.open(...).then(...)` callback. By then
+ *      `respondWith()` had handed the original body to the client, so the clone
+ *      threw "Response body is already used". The promise was fire-and-forget,
+ *      so the rejection went nowhere and the route stored nothing -- ever. The
+ *      only entries the cache held were the six install() precached.
+ *   2. The route matched on `request.destination`. The engine arrives through
+ *      fetch(), whose destination is the empty string, so the worker never saw
+ *      the 6.88 MB payload it exists to cache.
+ *
+ * Together those left offline simulation leaning on the browser's HTTP cache
+ * for a 7 MB body. The runtime half of that is scripts/offline-sim.mjs, which
+ * reproduces the user-visible failure; this is the cheap static half, and both
+ * are falsified by the same mutations in scripts/sw-cache.negctl.mjs.
+ *
+ * What is asserted here is the *shape* the defect needs, not the presence of a
+ * string: the response handed to cache.put() must be a binding created by a
+ * `.clone()`, taken before the async boundary. Both halves are required, so
+ * neither "clone inside the callback" nor "drop the clone" passes.
+ */
+const SW_PAYLOAD_DIRS = /const\s+ENGINE_PAYLOAD_DIRS\s*=\s*\[([^\]]*)\]/;
+const SW_STRING_LITERAL = /["']([^"']+)["']/g;
+const SW_ENGINE_PREDICATE = 'isEnginePayload(event.request)';
+
+/** Text between the parens of the call opening at `open` (index of "("). */
+function callArgs(text, open) {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') { depth--; if (depth === 0) return text.slice(open + 1, i); }
+  }
+  return null;
+}
+
+function checkServiceWorkerCache(site) {
+  const swPath = join(site, 'sw.js');
+  if (!existsSync(swPath)) {
+    return { status: 'absent', findings: [], notes: ['no sw.js in this tree'], dirs: [] };
+  }
+  const text = readFileSync(swPath, 'utf8');
+  const findings = [];
+  const dirs = [];
+
+  // --- every cache.put() must receive a clone bound before the async boundary
+  const PUT = /cache\.put\(/g;
+  let m;
+  let puts = 0;
+  while ((m = PUT.exec(text)) !== null) {
+    puts++;
+    const open = m.index + m[0].length - 1;
+    const args = callArgs(text, open);
+    if (args === null) {
+      findings.push({
+        key: 'sw-put-unparsable:' + puts, ref: 'sw.js',
+        notes: ['could not read the arguments of cache.put() #' + puts],
+      });
+      continue;
+    }
+    const parts = args.split(',');
+    const response = parts.slice(1).join(',').trim();
+    if (response.includes('.clone()')) {
+      findings.push({
+        key: 'sw-clone-after-await:' + puts, ref: 'sw.js',
+        notes: [
+          'cache.put() argument #' + puts + ' clones the response inline: `' + response.slice(0, 60) + '`',
+          'respondWith() has already taken that body by the time this callback runs, so the clone throws',
+          'and -- because the promise is fire-and-forget -- the route stores nothing at all',
+        ],
+      });
+      continue;
+    }
+    if (!/^[A-Za-z_$][\w$]*$/.test(response)) {
+      findings.push({
+        key: 'sw-put-not-a-clone:' + puts, ref: 'sw.js',
+        notes: ['cache.put() argument #' + puts + ' is not a binding, so it is not a clone: `' + response.slice(0, 60) + '`'],
+      });
+      continue;
+    }
+    const bound = new RegExp('const\\s+' + response + '\\s*=\\s*[^;]*?\\.clone\\(\\)');
+    if (!bound.test(text)) {
+      findings.push({
+        key: 'sw-put-not-a-clone:' + puts, ref: 'sw.js',
+        notes: [
+          'cache.put() argument #' + puts + ' (`' + response + '`) is never bound to a .clone()',
+          'storing the response the client is also being handed consumes its body',
+        ],
+      });
+    }
+  }
+  if (puts === 0) {
+    findings.push({
+      key: 'sw-no-cache-put', ref: 'sw.js',
+      notes: ['sw.js never calls cache.put(): the runtime route cannot cache anything'],
+    });
+  }
+
+  // --- the engine payload must be routed, and must not be precached
+  const decl = SW_PAYLOAD_DIRS.exec(text);
+  if (!decl) {
+    findings.push({
+      key: 'sw-payload-undeclared', ref: 'sw.js',
+      notes: [
+        'no ENGINE_PAYLOAD_DIRS in sw.js',
+        'the engine arrives by fetch() with an empty destination, so a route that matches on',
+        'destination alone never sees it and it stays outside this cache',
+      ],
+    });
+  } else {
+    SW_STRING_LITERAL.lastIndex = 0;
+    let d;
+    while ((d = SW_STRING_LITERAL.exec(decl[1])) !== null) dirs.push(d[1]);
+    if (dirs.length === 0) {
+      findings.push({ key: 'sw-payload-empty', ref: 'sw.js', notes: ['ENGINE_PAYLOAD_DIRS lists nothing'] });
+    }
+    for (const dir of dirs) {
+      const full = join(site, dir.split('/').join('\\'));
+      let nonEmpty = false;
+      try { nonEmpty = statSync(full).isDirectory() && readdirSync(full).length > 0; } catch { nonEmpty = false; }
+      if (!nonEmpty) {
+        findings.push({
+          key: 'sw-payload-dir-missing:' + dir, ref: dir,
+          notes: ['declared as engine payload but no non-empty ' + dir + ' in this tree'],
+        });
+      }
+    }
+    // Precaching the payload would make every visitor download it before asking
+    // to simulate anything -- the reason it lives on the runtime route instead.
+    const precached = [];
+    SW_SHELL.lastIndex = 0;
+    let s;
+    while ((s = SW_SHELL.exec(text)) !== null) precached.push(s[1].replace(/^\.\//, ''));
+    for (const dir of dirs) {
+      const hit = precached.find((p) => p.startsWith(dir));
+      if (hit) {
+        findings.push({
+          key: 'sw-payload-precached:' + dir, ref: hit,
+          notes: [
+            'shellUrls() precaches ' + hit + ', which is inside the engine payload directory ' + dir,
+            'cache.addAll() is atomic, so this also makes the whole install depend on the engine',
+          ],
+        });
+      }
+    }
+    if (!text.includes(SW_ENGINE_PREDICATE)) {
+      findings.push({
+        key: 'sw-engine-unrouted', ref: 'sw.js',
+        notes: [
+          'ENGINE_PAYLOAD_DIRS is declared but the fetch handler never asks ' + SW_ENGINE_PREDICATE,
+          'the declaration is inert and the engine is uncached',
+        ],
+      });
+    }
+  }
+
+  return {
+    status: 'checked',
+    findings,
+    notes: [puts + ' cache.put() site(s), ' + dirs.length + ' engine payload dir(s)'],
+    dirs,
+  };
+}
+
+/**
  * Render a keyed finding list, separating accepted deviations from live ones.
  *
  * An accepted entry is deliberately still printed. The point of the list is
@@ -1403,6 +1572,7 @@ async function main() {
   const egress = checkOutboundEgress(site, outboundPath);
   const storage = checkStorageAccess(site);
   const csp = checkShellCsp(site, cspPath, outboundPath);
+  const swcache = checkServiceWorkerCache(site);
   const jsxFactoryList = jsxFactory
     .filter((r) => r.failures.length > 0)
     .map((r) => ({
@@ -1422,6 +1592,7 @@ async function main() {
   const lists = [
     escapedList, missingList, externalList, jsxList, shellList, jsxFactoryList,
     jsxSites.findings, egress.findings, storage.findings, csp.findings,
+    swcache.findings,
   ];
   for (const list of lists) {
     for (const f of list) {
@@ -1551,9 +1722,23 @@ async function main() {
     for (const n of csp.notes.slice(0, 6)) push('      ' + n);
   }
 
+  push('');
+  push('12. service worker cache contract');
+  push('   (the response stored by cache.put() must be a clone taken before respondWith() ' +
+    'takes the body, and the engine payload -- which arrives by fetch(), with an empty ' +
+    'destination -- must be routed on the runtime path rather than precached at install)');
+  if (swcache.status !== 'checked') {
+    push('  --  ' + swcache.notes.join('; '));
+  } else if (swcache.findings.length === 0) {
+    push('  ok  ' + swcache.notes.join('; '));
+  } else {
+    push(...render(swcache.findings, 'service worker cache findings',
+      'the worker caches nothing, so offline simulation depends on the browser HTTP cache', accepted));
+  }
+
   if (stale.length > 0) {
     push('');
-    push('12. stale accepted deviations');
+    push('13. stale accepted deviations');
     push(...render(stale, 'accepted entries that matched nothing', null, () => false));
   }
 
@@ -1590,6 +1775,12 @@ async function main() {
         documents: csp.documents,
         findings: csp.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
         notes: csp.notes,
+      },
+      serviceWorkerCache: {
+        status: swcache.status,
+        dirs: swcache.dirs,
+        findings: swcache.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
+        notes: swcache.notes,
       },
       outbound: {
         manifest: outboundPath,
