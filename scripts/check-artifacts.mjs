@@ -89,7 +89,17 @@
  *                   apart in either direction. Without this the panel keeps
  *                   rendering a Process corner dropdown that changes nothing.
  *                   See checkCornerSweep.
- *  15. (meta)       Accepted deviations that matched nothing. Printed only when
+ *  15. importLibs  A netlist imported through the File menu must be able to
+ *                   resolve the model libraries this build ships. The control is
+ *                   a flat multi-file picker, so a selection cannot express a
+ *                   directory, while the include resolver refuses anything that
+ *                   climbs above dirname(entry). What the browser cannot see is
+ *                   checked here: that the text embedded in the chunk is still
+ *                   the bytes of site/models/*.lib, that the injected pool is
+ *                   actually CALLED rather than merely present, and that the
+ *                   filename fallback is still fenced to relative paths and to
+ *                   names the pool holds. See checkImportLibs.
+ *  16. (meta)       Accepted deviations that matched nothing. Printed only when
  *                   there are any, and never silenceable.
  *
  * The rule in (1) is deliberately narrow: a reference is reported only when
@@ -118,6 +128,8 @@
  *                  check 11. Default: scripts/shell-csp.json when it exists.
  *   --corner=<file>  Manifest of the process-corner selection for check 14.
  *                  Default: scripts/corner-sweep.json when it exists.
+ *   --import=<file>  Manifest of the import-library repair for check 15.
+ *                  Default: scripts/import-libs.json when it exists.
  *   --json=<file>  Also write findings as JSON.
  *
  * Exit codes: 0 clean or only accepted deviations, 1 findings, 2 usage or IO
@@ -170,7 +182,7 @@ const kib = (bytes) => (bytes / 1024).toFixed(1);
 function parseArgs(argv) {
   const out = {
     site: join(REPO_ROOT, 'site'), base: null, strict: false, json: null, accept: null,
-    outbound: null, csp: null, precache: null, corner: null,
+    outbound: null, csp: null, precache: null, corner: null, import: null,
   };
   for (const arg of argv) {
     // An empty value would silently resolve to the current directory and scan
@@ -184,6 +196,7 @@ function parseArgs(argv) {
     else if (arg.startsWith('--csp=')) out.csp = resolve(REPO_ROOT, arg.slice('--csp='.length));
     else if (arg.startsWith('--precache=')) out.precache = resolve(REPO_ROOT, arg.slice('--precache='.length));
     else if (arg.startsWith('--corner=')) out.corner = resolve(REPO_ROOT, arg.slice('--corner='.length));
+    else if (arg.startsWith('--import=')) out.import = resolve(REPO_ROOT, arg.slice('--import='.length));
     else if (arg.startsWith('--json=')) out.json = arg.slice('--json='.length);
     else return { error: 'unknown argument: ' + arg };
   }
@@ -1718,6 +1731,218 @@ function checkCornerSweep(site, manifestPath) {
   return out;
 }
 
+// 15. import library reachability
+//
+// The File menu's Import SPICE control is a plain multi-file picker, and that is
+// the only channel files can enter this deployment through (webkitdirectory
+// occurs nowhere in the build), so a selection arrives with an empty
+// webkitRelativePath and the importer falls back to File.name. The include
+// resolver, however, is written as though a directory structure were available:
+// Jl() refuses anything that climbs above dirname(entry), which for a flat name
+// is empty. So the spelling cap.lib and opamp.lib both instruct their readers to
+// write -- `.include ../models/<lib>` -- is refused before the file pool is even
+// consulted.
+//
+// scripts/import-libs.json closes that with two edits: the shipped libraries join
+// the pool Ql() hands to Zl(), and a relative include whose strict resolution
+// failed is retried by filename against that pool. What is checked here is the
+// part a browser run cannot see: that the text embedded in the chunk is still
+// the text in site/models/, that the injected code is actually CALLED rather
+// than merely present, and that the fallback is still fenced to relative paths
+// and to names the pool holds. The behaviour itself -- four spellings importing,
+// two controls refusing -- is scripts/spice-import.mjs.
+function checkImportLibs(site, manifestPath) {
+  const out = { status: 'checked', libraries: [], findings: [], notes: [] };
+  if (!manifestPath) {
+    out.status = 'absent';
+    out.notes.push('no import manifest (pass --import=<file> to enable this check)');
+    return out;
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  } catch (e) {
+    out.status = 'absent';
+    out.notes.push('cannot read the import manifest: ' + e.message);
+    return out;
+  }
+  const contract = manifest.contract ?? {};
+  const ref = manifestPath.replace(REPO_ROOT, '').replace(/^[\\/]/, '');
+  const repairs = manifest.repairs ?? [];
+  if (!contract.chunk || !Array.isArray(contract.libraries) || !contract.libraries.length || !repairs.length) {
+    out.status = 'absent';
+    out.notes.push('the import manifest declares no usable contract, so nothing here would be verified');
+    return out;
+  }
+  const chunkPath = join(site, String(contract.chunk).split('/').join('\\'));
+  if (!existsSync(chunkPath)) {
+    out.status = 'absent';
+    out.notes.push('no ' + contract.chunk + ' in this tree');
+    return out;
+  }
+  const chunk = readFileSync(chunkPath, 'utf8');
+
+  // Applicability. The negative controls for other checks build two-file trees,
+  // and a check that reads the import chunk unconditionally would report every
+  // one of them as broken. The gate is "does this tree carry the feature at
+  // all": the Import SPICE control is the thing the repair exists for, and it is
+  // present whether or not the repair has been applied -- so a tree that has the
+  // control and not the repair is still checked, and reports it.
+  if (!chunk.includes('spice-files')) {
+    out.status = 'absent';
+    out.notes.push('this tree carries no Import SPICE control, so it has no import to make reachable');
+    return out;
+  }
+
+  const count = (text, needle) => {
+    let n = 0;
+    let at = 0;
+    for (;;) {
+      const i = text.indexOf(needle, at);
+      if (i === -1) return n;
+      n += 1;
+      at = i + needle.length;
+    }
+  };
+
+  // --- 1. both repairs are in place ------------------------------------------
+  for (const repair of repairs) {
+    const label = repair.id ?? '(unnamed)';
+    const file = join(site, String(repair.file).split('/').join('\\'));
+    if (!existsSync(file)) {
+      out.findings.push({ key: 'import-repair-file-absent:' + label, ref: String(repair.file), notes: ['the file this repair edits is not in this tree'] });
+      continue;
+    }
+    const text = readFileSync(file, 'utf8');
+    const markers = repair.marker ? [repair.marker] : (repair.edits ?? []).map((e) => e.marker).filter(Boolean);
+    if (!markers.length) {
+      out.findings.push({ key: 'import-repair-unmarked:' + label, ref: String(repair.file), notes: ['the repair declares no marker, so its presence cannot be established from the artifact'] });
+      continue;
+    }
+    for (const marker of markers) {
+      const n = count(text, marker);
+      if (n !== 1) {
+        out.findings.push({
+          key: 'import-repair-missing:' + label, ref: String(repair.file),
+          notes: ['marker ' + JSON.stringify(marker) + ' occurs ' + n + ' time(s); expected exactly 1',
+            'an artifact with the control but without this repair refuses includes naming a library the user cannot supply'],
+        });
+      }
+    }
+  }
+
+  // --- 2. the injected code is called, not merely present --------------------
+  //
+  // "Present in the artifact" and "reached at runtime" are different claims, and
+  // only the second one matters. An earlier draft of this repair added the
+  // definitions and forgot to rewire the call; the chunk looked patched and
+  // nothing changed. This is the assertion that catches that shape.
+  if (!chunk.includes('function builtinSourceFiles(') || !chunk.includes('builtinSourceFiles(e)')) {
+    out.findings.push({
+      key: 'import-pool-not-called', ref: contract.chunk,
+      notes: ['the pool is either undefined or defined and never handed to Zl(), so an unselected include still cannot resolve'],
+    });
+  } else if (!/Zl\(\[\.\.\.e,\.\.\.builtinSourceFiles\(e\)\]\)/.test(chunk)) {
+    out.findings.push({
+      key: 'import-pool-call-shape', ref: contract.chunk,
+      notes: ['builtinSourceFiles is called, but not as Zl([...e, ...builtinSourceFiles(e)]) -- confirm the pool still reaches the decoder'],
+    });
+  }
+
+  // --- 3. the embedded text is the text in this tree ------------------------
+  //
+  // The manifest carries a copy of site/models/*.lib. A copy that drifts is
+  // worse than no copy: the import would resolve to a library the artifact does
+  // not ship, and every other check would still pass.
+  const poolMatch = /var BUILTIN_SOURCE_LIBS=(\[[\s\S]*?\]);function builtinSourceFiles/.exec(chunk);
+  if (chunk.includes('var BUILTIN_SOURCE_LIBS=') && !poolMatch) {
+    out.findings.push({ key: 'import-pool-unparsable', ref: contract.chunk, notes: ['the embedded library array is not in the shape this check reads, so it cannot be compared with the tree'] });
+  }
+  const embedded = new Map();
+  if (poolMatch) {
+    let parsed = null;
+    try { parsed = JSON.parse(poolMatch[1]); } catch (e) { parsed = null; }
+    if (!Array.isArray(parsed)) {
+      out.findings.push({ key: 'import-pool-unparsable', ref: contract.chunk, notes: ['the embedded library array does not parse as JSON'] });
+    } else {
+      for (const entry of parsed) if (entry && typeof entry.name === 'string') embedded.set(entry.name, String(entry.text ?? ''));
+
+      for (const decl of contract.libraries) {
+        const libPath = join(site, 'models', String(decl.name).split('/').join('\\'));
+        if (!existsSync(libPath)) {
+          out.findings.push({ key: 'import-lib-missing:' + decl.name, ref: 'models/' + decl.name, notes: ['the manifest says this build ships this library; the tree does not have it'] });
+          continue;
+        }
+        const bytes = readFileSync(libPath);
+        const digest = createHash('sha256').update(bytes).digest('hex');
+        out.libraries.push({ name: decl.name, bytes: bytes.length, sha256: digest });
+
+        if (decl.sha256 && decl.sha256 !== digest) {
+          out.findings.push({
+            key: 'import-manifest-drift:' + decl.name, ref: ref,
+            notes: ['the manifest pins sha256:' + String(decl.sha256).slice(0, 12) + ' and models/' + decl.name +
+              ' hashes to ' + digest.slice(0, 12) + '; re-derive the manifest from this tree'],
+          });
+        }
+        if (!embedded.has(decl.name)) {
+          out.findings.push({
+            key: 'import-pool-not-declaring:' + decl.name, ref: contract.chunk,
+            notes: ['models/' + decl.name + ' ships in this tree but is not in the imported pool, so a netlist including it still fails'],
+          });
+          continue;
+        }
+        const text = embedded.get(decl.name);
+        if (Buffer.from(text, 'utf8').compare(bytes) !== 0) {
+          const a = Buffer.from(text, 'utf8');
+          let first = 0;
+          while (first < Math.min(a.length, bytes.length) && a[first] === bytes[first]) first += 1;
+          out.findings.push({
+            key: 'import-lib-drift:' + decl.name, ref: contract.chunk,
+            notes: ['the text embedded in ' + contract.chunk + ' is not the bytes of models/' + decl.name +
+              ' (' + a.length + ' vs ' + bytes.length + ' bytes)',
+              'first difference at byte ' + first],
+          });
+        }
+      }
+      for (const name of embedded.keys()) {
+        if (!contract.libraries.some((l) => l.name === name)) {
+          out.findings.push({ key: 'import-pool-undeclared:' + name, ref: contract.chunk, notes: ['the pool carries a library the manifest does not declare, so this check cannot say what it should contain'] });
+        }
+      }
+    }
+  }
+
+  // --- 4. the fallback is fenced -------------------------------------------
+  //
+  // Two fences, both load-bearing. The local-only test is what keeps a non-local
+  // include refused -- `absolute-include` in the runtime harness is written
+  // against exactly this, naming a basename the pool holds. `r.files.has(ir)` is
+  // what keeps the fallback a lookup rather than an invention: it can only
+  // resolve to a file the pool or the selection actually holds.
+  if (!chunk.includes('includeBasenameFallback')) {
+    out.findings.push({
+      key: 'import-fallback-missing', ref: contract.chunk,
+      notes: ['a relative include refused by Jl() has no filename fallback, so the spelling the shipped libraries teach is still refused'],
+    });
+  } else {
+    if (!chunk.includes('[a-z]:[\\\\/])/iu.test(includeBasenameFallback)')) {
+      out.findings.push({
+        key: 'import-fallback-unguarded', ref: contract.chunk,
+        notes: ['the fallback no longer tests that the requested path is relative, so a non-local include could resolve against the shipped pool',
+          'that turns the "not local" rule into a filename lookup and makes /usr/share/<shipped lib> importable'],
+      });
+    }
+    if (!chunk.includes('r.files.has(ir)')) {
+      out.findings.push({
+        key: 'import-fallback-unscoped', ref: contract.chunk,
+        notes: ['the fallback no longer requires the name to be in the pool or the selection, so it can resolve an include to nothing'],
+      });
+    }
+  }
+
+  return out;
+}
+
 function checkServiceWorkerCache(site) {
   const swPath = join(site, 'sw.js');
   if (!existsSync(swPath)) {
@@ -1889,7 +2114,7 @@ async function main() {
   // silence the check that reads it -- the check would print "--" where it used
   // to print "ok", and nothing would fail.
   for (const [flag, p] of [['--outbound', args.outbound], ['--csp', args.csp],
-    ['--precache', args.precache], ['--corner', args.corner]]) {
+    ['--precache', args.precache], ['--corner', args.corner], ['--import', args.import]]) {
     if (p !== null && !existsSync(p)) {
       console.error(flag + ' was given but the file does not exist: ' + p);
       return 2;
@@ -1940,6 +2165,9 @@ async function main() {
   const defaultCorner = join(REPO_ROOT, 'scripts', 'corner-sweep.json');
   const cornerPath = args.corner ?? (existsSync(defaultCorner) ? defaultCorner : null);
   push('  corner   = ' + (cornerPath ?? 'none'));
+  const defaultImport = join(REPO_ROOT, 'scripts', 'import-libs.json');
+  const importPath = args.import ?? (existsSync(defaultImport) ? defaultImport : null);
+  push('  import   = ' + (importPath ?? 'none'));
 
   const refs = checkBaseRefs(site, normalised, args.strict);
   push('  scanned ' + refs.scanned + ' text files, ' + (refs.bytes / 1024).toFixed(0) + ' KiB');
@@ -1999,6 +2227,7 @@ async function main() {
   const swcache = checkServiceWorkerCache(site);
   const shellCache = shellCacheState(site);
   const corner = checkCornerSweep(site, cornerPath);
+  const importLibs = checkImportLibs(site, importPath);
   const jsxFactoryList = jsxFactory
     .filter((r) => r.failures.length > 0)
     .map((r) => ({
@@ -2018,7 +2247,7 @@ async function main() {
   const lists = [
     escapedList, missingList, externalList, jsxList, shellList, jsxFactoryList,
     jsxSites.findings, egress.findings, storage.findings, csp.findings,
-    swcache.findings, shellCache.findings, corner.findings,
+    swcache.findings, shellCache.findings, corner.findings, importLibs.findings,
   ];
   for (const list of lists) {
     for (const f of list) {
@@ -2206,9 +2435,25 @@ async function main() {
       'the corner controls exist but do not change the answer', accepted));
   }
 
+  push('');
+  push('15. import library reachability');
+  push('   (the File menu\'s Import SPICE control is a flat multi-file picker, so a selection cannot ' +
+    'express a directory -- the include resolver still has to answer the libraries this build ships. ' +
+    'A tree with the control but without the pool refuses .include ../models/<lib>, which is what ' +
+    'cap.lib and opamp.lib both instruct their readers to write)');
+  if (importLibs.status !== 'checked') {
+    push('  --  ' + importLibs.notes.join('; '));
+  } else if (importLibs.findings.length === 0) {
+    push('  ok  ' + importLibs.libraries.length + ' library(ies) ' +
+      JSON.stringify(importLibs.libraries.map((l) => l.name)) + ' reachable from an import, text and hash derived from models/');
+  } else {
+    push(...render(importLibs.findings, 'import findings',
+      'the control exists but an include naming a shipped library cannot be resolved', accepted));
+  }
+
   if (stale.length > 0) {
     push('');
-    push('15. stale accepted deviations');
+    push('16. stale accepted deviations');
     push(...render(stale, 'accepted entries that matched nothing', null, () => false));
   }
 
@@ -2281,6 +2526,13 @@ async function main() {
         devices: corner.devices,
         findings: corner.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
         notes: corner.notes,
+      },
+      importLibs: {
+        manifest: importPath,
+        status: importLibs.status,
+        libraries: importLibs.libraries,
+        findings: importLibs.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
+        notes: importLibs.notes,
       },
       outbound: {
         manifest: outboundPath,

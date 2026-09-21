@@ -58,6 +58,8 @@ node scripts/example-outcomes.negctl.mjs --require
 node scripts/shell-cache.mjs
 node scripts/shell-cache.negctl.mjs --static-only
 node scripts/corner-sweep.negctl.mjs
+node scripts/spice-import.mjs --require
+node scripts/spice-import.negctl.mjs
 ```
 
 or `npm run check:artifacts` / `npm run smoke` / `npm run check:storage` /
@@ -67,7 +69,8 @@ or `npm run check:artifacts` / `npm run smoke` / `npm run check:storage` /
 `npm run check:precache` / `npm run check:precache:neg:static` /
 `npm run check:examples` / `npm run check:examples:neg` /
 `npm run check:shellcache` / `npm run check:shellcache:neg:static` /
-`npm run check:corner` / `npm run check:corner:neg`.
+`npm run check:corner` / `npm run check:corner:neg` /
+`npm run check:import` / `npm run check:import:neg:static`.
 
 `npm run bump:shellcache` rewrites `sw.js`'s cache constant from the artifact.
 Run it after any change to `site/`; check 13 fails the build if you forget.
@@ -77,6 +80,16 @@ manifest-driven patcher as the other repairs. The corner sweep is the one repair
 that also writes a **model library** (`site/models/cmos.lib`), so it is the only
 patch that needs `bump:shellcache` to run after it — a model card is inside
 `ENGINE_PAYLOAD_DIRS` and therefore inside the derived token.
+
+`npm run patch:import` re-plays `scripts/import-libs.json`, which makes the model
+libraries this build ships resolve from a netlist imported through the File menu.
+Both repairs are insertions into `App-*.js`, so each declares a **marker** — a
+string that is absent before the repair and present exactly once after — because
+the patcher's default idempotence test ("the replacement is present and the
+anchor is gone") only settles an edit that consumes its anchor. That patch grows
+the chunk, which shifts the byte offsets the storage acceptances in
+`scripts/known-deviations.json` are keyed by; those were re-derived, and check 10
+is what says so if they are not.
 
 The process-corner sweep is **teaching-grade**: `tt`/`ss`/`ff` scale the
 Level-1 (Shichman–Hodges) parameters of `site/models/cmos.lib` by a made-up
@@ -107,15 +120,46 @@ the shipped engine.
 Two more libraries ship in `site/models/` — `cap.lib` (role capacitors: `cout`,
 compensation, bypass, MIM/MOM tags) and `opamp.lib` (behavioural `opamp_se` /
 `opamp_diff` with `av0`/`gbw`/`rin`/`rout`/`vos`/`acm`/`swing`). Their headers
-tell a netlist to include them, and `numeric-crosscheck.mjs` now **runs** them,
-because nothing ever had: the results are correct to the closed forms. What the
-app cannot do is **reach** them — the simulator's filesystem is populated from a
-single hardcoded library path, and the one code path that runs a user's own deck
-verbatim (`mode: 'raw'`) is not constructible from this deploy, which builds
-every simulation setup as `structured` and imports SPICE into a project rather
-than into a deck. So the two libraries are source material for a netlist you
-import yourself, not a library the app offers. Do not read the green as "the
-feature works"; see `analysis/SPICE-Simulator-创新性产品改进评估-C2-2026-09-22.md`.
+tell a netlist to include them, and `numeric-crosscheck.mjs` **runs** them,
+because nothing ever had: the results are correct to the closed forms.
+
+Importing such a netlist is the File menu's **Import SPICE** control — a plain
+`<input type="file" multiple>`, and the only channel files can enter through
+(`webkitdirectory` occurs nowhere in the build). A flat selection arrives with an
+empty `webkitRelativePath`, so the importer falls back to `File.name`, while the
+include resolver refuses anything that climbs above `dirname(entry)` — which for
+a flat name is empty. Measured in a browser before the repair landed:
+
+| include in the netlist | before | now |
+|---|---|---|
+| `.include cap.lib`, `cap.lib` also selected | imports | imports |
+| `.include ../models/cap.lib` — what both headers teach | **refused: escapes the selected source root** | imports |
+| `.include cap.lib`, nothing else selected | **refused: not selected or found** | imports |
+| a library this build does not ship | refused | refused |
+| `/usr/share/cap.lib` (not a local path) | refused | refused |
+
+`scripts/import-libs.json` closes that: the shipped libraries join the pool handed
+to the importer's decoder, and a *relative* include whose strict resolution failed
+is retried by filename against that pool. Absolute and URL includes are still
+refused — the last two rows above are the tests that say so, and
+`spice-import.mjs` is what measures them in a browser. The trade is explicit and
+**is** a behaviour change: when a netlist includes a library you did not supply,
+the bundled one is used. If that library defines a different device under the same
+subcircuit name, the run is not the one your netlist intended; the alternative was
+a hard refusal, and the libraries are the ones this build calls educational.
+
+Two things are still not reachable here, and the green above is not about them.
+The simulator's filesystem is populated from a single hardcoded library path, and
+the one code path that runs a user's own deck verbatim (`mode: 'raw'`) is not
+constructible from this deploy — every setup is built as `structured`, and
+imported SPICE becomes a project rather than a deck. Background and the paths
+that were ruled out are in
+`analysis/SPICE-Simulator-创新性产品改进评估-C2-2026-09-22.md`; the change itself,
+with the measured before/after matrix and both mutants, is in
+`analysis/SPICE-Simulator-创新性产品改进-C2b-导入可达性-2026-09-22.md`. It is labelled
+C2b, not C3, because it is the **reachable half of C2** (the feasibility list's C2 is
+"make `cap.lib`/`opamp.lib` reachable") rather than the next item on that list — whose
+C3 is the unrelated service-worker Gallery shim.
 
 `npm run preview` serves with `Cache-Control: no-store`, which is what you want
 while editing the artifact but which also stops the service worker from caching
@@ -124,7 +168,7 @@ anything — so a preview cannot tell you whether the worker works. Pass
 
 | Check | Question it answers |
 |---|---|
-| `check-artifacts.mjs` | Is the bundle self-consistent — do its references resolve, is there no development JSX runtime or folded-`undefined` call site, is every network target in the tree classified, is every storage read inside a `try`/`catch`, does the shell still carry its Content-Security-Policy, does `sw.js` still have the shape its caching needs, does the worker's atomic install payload fit its budget, does the constant it opens its cache under still describe this tree, and does the corner set the panel offers match the model library that has to answer it? |
+| `check-artifacts.mjs` | Is the bundle self-consistent — do its references resolve, is there no development JSX runtime or folded-`undefined` call site, is every network target in the tree classified, is every storage read inside a `try`/`catch`, does the shell still carry its Content-Security-Policy, does `sw.js` still have the shape its caching needs, does the worker's atomic install payload fit its budget, does the constant it opens its cache under still describe this tree, does the corner set the panel offers match the model library that has to answer it, and does an imported netlist still resolve the model libraries this build ships (including that the text embedded in the chunk is still the bytes of `site/models/*.lib` and that the injected pool is called rather than merely present)? |
 | `smoke-test.mjs` | Does the editor actually run — does a real simulation finish with zero uncaught errors? |
 | `storage-resilience.mjs` | Does the editor still render in a browser that **denies** storage? Loads the home page and an `?example=` deep link with `localStorage`/`sessionStorage` replaced by throwing getters — the failure mode of Safari private mode, blocked site data and partitioned iframes — and requires the editor, not the crash screen. |
 | `numeric-crosscheck.mjs` | Are the numbers **right** — does the shipped WASM agree with first-principles closed forms and with model-independent invariants (including for BSIM3/BSIM4, which have no closed form)? It also runs the two **role libraries** the deploy ships (`cap.lib`, `opamp.lib`): an ideal capacitor must be an open circuit at dc and charge with `tau = R*C`, and `opamp_se` must follow its soft-rail tanh transfer behind the series `Rout`. |
@@ -139,6 +183,8 @@ anything — so a preview cannot tell you whether the worker works. Pass
 | `precache-budget.negctl.mjs` | Would the install-budget check **notice**? Three mutants — `logo.png` replaced by a real 512×512 PNG, the 512 px manifest icon re-declared in `shellUrls()`, and a precache target deleted (where `addAll()`'s atomicity aborts the install) — each required to be caught by **both** channels: check 5 names it, and `precache-weight.mjs` fails. `--static-only` runs without a browser. |
 | `example-outcomes.mjs` | Do the built-in examples do what the catalog says? Walks every catalog entry. Expectations are computed from the shipped chunks — the catalog, each payload's setup list, and the browser executor's advertised profiles — and then checked against the page the product renders, so the two sides are independent. An example with no setups must offer nothing to run; one whose profile is advertised must complete and render; one whose profile is not must carry a `(unavailable)` warning **before** the run and then refuse with a structured problem, drawing no plots. The sweep requires both a completion and a refusal to appear, because a harness that has only ever seen one of them cannot tell an honest refusal from a dead run. |
 | `example-outcomes.negctl.mjs` | Would that check **notice**? Six mutants — the pre-run warning removed, the unavailable profile declared as available, the runnable lab's model card deleted, the Run control made unaddressable, a catalog entry pointing at a payload that does not exist, and the only un-runnable lab removed from the catalog — each required to turn the check red for its own stated reason. The control case runs first: if it is not green, nothing else in the file means anything. |
+| `spice-import.mjs` | Can a user actually get a netlist in, and what happens to its `.include` lines? Clicks the real **Import SPICE** label in a real browser with file-chooser interception on, and requires Chrome to report the chooser event before it hands any files over — so "the control is drivable through the picker a user would use" is asserted, not assumed. Then it reads the product's own sentence back: four spellings (no includes, a bare name with the library selected, the `../models/<lib>` form both library headers teach, the bare name with nothing selected) must import, and two controls must still refuse — a library this build does not ship, and `/usr/share/cap.lib`, which is deliberately a name the pool holds so that relaxing the local-only rule turns it green. |
+| `spice-import.negctl.mjs` | Would that guard **notice**? Two mutants against real copies, each pinning one half of the repair: emptying the pool must turn exactly `bare-unselected` red while `header-form` stays green — the user selected that file, so the fallback found it and the pool was never needed, and a mutant that took both down would not tell the two mechanisms apart — and deleting the local-only guard must turn exactly `absolute-include` red. Both channels are required to see each mutant, with `check 15` naming it: the static side catches a pool that is present but never wired, which a browser run cannot distinguish from one that is simply empty. `--static-only` runs without a browser and first requires check 15 to be silent on the unmutated tree. |
 | `shell-cache.mjs` | Does the constant `sw.js` opens its cache under still describe **this tree**? Upstream's build injects a digest of the emitted asset graph there, and that injection is what lets a deploy retire a stale shell. This repository does not run that build: every repair is a hand-patch that *keeps* the filename the content hash is supposed to police, and the static route is cache-first with no revalidation — so a stale constant hides the repair from every returning client for good. The token is therefore **derived, not chosen**: a SHA-256 over the bytes these routes could store — the `shellUrls()` members, every extension a resource tag can request, and everything under `ENGINE_PAYLOAD_DIRS` — plus those two declarations, because they decide which of those URLs are stored. A file the worker can never be asked for (a licence text, a release manifest) is deliberately *not* hashed: it cannot go stale in anyone's cache. `--write` restores it; `--check` (the default) reports. |
 | `shell-cache.negctl.mjs` | Would check 13 **notice**? Nine mutants — a chunk patched while its content-hashed filename stays, a model card patched (in scope only through `ENGINE_PAYLOAD_DIRS`), the constant set by hand instead of derived, the constant deleted, `activate()`'s retirement prefix narrowed so no old shell is ever dropped, a directory added to `ENGINE_PAYLOAD_DIRS`, a member dropped from `shellUrls()`, `install()` re-pointed at a cache name outside the prefix, and a file added that this worker can never be asked for (which must **not** move the token, pinning the scope) — each required to produce its own outcome. Both channels run, and neither contains the other: `activate-filter-narrowed` requires the runtime channel to *pass* (the retirement rule is static-only), while `install-cache-renamed` leaves the static guard **completely green** — the constant and both declarations are untouched — and only the browser can report it. `--static-only` runs without a browser. |
 | `corner-sweep.negctl.mjs` | Would the corner feature **notice** if it broke? Fifteen cases against real patched copies: a control, the unpatched tree, the capability's corner list emptied or re-ordered, the selector emission dropped, mapped to the wrong value, given an extra branch, or having the typical corner map to a non-zero selector, the emitted `.param` renamed, the descriptor or the run record stripped, the library's base model moved or a device left unmodelled, a manifest that declares a corner the artifact does not implement, and a manifest that is vacuous. Each must turn check 14 red for its own named reason. The runtime half is pinned by `numeric-crosscheck.negctl.mjs`'s `corner_inert` mutant, which edits the **shipped library** so it stops answering the selector: `corner_shifts_every_device` must fail while `corner_default_matches_frozen` stays green — a guard that only ever saw one of those two outcomes could not tell a live sweep from a dead one. |

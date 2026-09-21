@@ -117,6 +117,16 @@ jobs:
       # unmodelled device -- and requires each to be named.
       - name: Prove the corner-selection check is not vacuous (mutation test)
         run: node scripts/corner-sweep.negctl.mjs
+      # The File menu's Import SPICE control is a flat multi-file picker, while
+      # the include resolver refuses anything that climbs above dirname(entry) --
+      # which for a flat selection is empty. Check 15 (inside the artifact guard
+      # above) ties the library text embedded in the chunk to site/models/, and
+      # requires the pool to be CALLED rather than merely present: an earlier
+      # draft of this repair added the definitions and forgot to rewire the call,
+      # which every text search would have called a fix. This step mutates the
+      # pool and the local-only guard and requires check 15 to name each.
+      - name: Prove the import-reachability check is not vacuous (mutation test)
+        run: node scripts/spice-import.negctl.mjs --static-only
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -242,5 +252,23 @@ jobs:
       # report it.
       - name: Prove the shell-cache token check is not vacuous (mutation test)
         run: node scripts/shell-cache.negctl.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # Can a user get a netlist in at all, and what does the product say about
+      # its .include lines? This drives the real Import SPICE label through the
+      # real file chooser -- requiring Chrome to report the chooser event before
+      # any file is handed over, so drivability is asserted rather than assumed --
+      # and reads the outcome back off the page. Four spellings must import; a
+      # library this build does not ship, and a non-local path naming one it
+      # does, must still be refused. The static step above shares the repair with
+      # this one and neither contains the other: an unwired pool is visible to
+      # the static channel (the call is missing from the text) while this channel
+      # would see it only as the old refusal returning.
+      - name: A netlist can be imported, and its includes resolve
+        run: node scripts/spice-import.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      - name: Prove the import guard is not vacuous (mutation test)
+        run: node scripts/spice-import.negctl.mjs --require
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
