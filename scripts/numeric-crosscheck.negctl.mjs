@@ -68,38 +68,90 @@ const MUTATIONS = [
     count: 2,
     expectCases: ['diode_res', 'diode_exp_slope'],
   },
+  {
+    // This one mutates the ARTIFACT rather than the guard: the claim under test
+    // is "the library in the tree answers the selector", so breaking the guard's
+    // own source would prove nothing about the artifact. Every spread expression
+    // loses its selector, which leaves the three corners identical -- the exact
+    // shape of a corner sweep that reports three answers and means none of them.
+    //
+    // It is also the case that shows the two cross-checks are independent: making
+    // the selector inert must fail the ordering check and must NOT disturb
+    // "the default still matches the pre-corner device set", because the base
+    // values are untouched.
+    id: 'corner_inert',
+    what: 'artifact: the library stops answering the selector, so all three corners return the typical answer',
+    artifact: 'site/models/cmos.lib',
+    artifactFrom: '*__cn_sel',
+    artifactTo: '*0',
+    count: 20,
+    onlyCases: ['corner_default', 'corner_ss', 'corner_ff', 'corner_frozen'],
+    expectCases: ['corner_shifts_every_device'],
+    expectPass: ['corner_default_matches_frozen'],
+  },
 ];
 
 const src = readFileSync(SRC, 'utf8');
 const suite = mkdtempSync(join(tmpdir(), 'nc-negctl-'));
 
 /** Rewrite the mutant's paths: real repo for the engine, temp dir for its report. */
-function rehome(text, id) {
-  return text
+function rehome(text, id, extra) {
+  let out = text
     .replace("resolve(HERE, '..')", JSON.stringify(REPO_ROOT))
     .replace("join(REPO_ROOT, 'numeric-crosscheck-result.json')",
       JSON.stringify(join(suite, `result-${id}.json`)));
+  // A mutant that breaks the ARTIFACT points the mutant guard at a mutated copy
+  // of the artifact's own file, so what gets exercised is the bytes under test
+  // rather than the guard's idea of them.
+  if (extra && extra.cornerLib) {
+    out = out.replace("join(REPO_ROOT, 'site', 'models', 'cmos.lib')",
+      JSON.stringify(extra.cornerLib));
+  }
+  return out;
 }
 
 let allGood = true;
 try {
   for (const m of MUTATIONS) {
-    const hits = src.split(m.from).length - 1; // String.replace() is not global
-    if (hits !== m.count) {
-      console.log(`[SETUP-ERROR] ${m.id}: expected ${m.count} anchor occurrence(s), found ${hits}`);
-      console.log(`              anchor: ${m.from}`);
-      allGood = false;
-      continue;
+    // Two kinds of mutant live here: one edits the guard's own source (an oracle
+    // or a deck literal), the other edits a copy of an artifact file. A guard-
+    // source mutation needs its anchor counted, because String.replace() is not
+    // global and a single-occurrence miss would look like a surviving mutant.
+    let guardText = src;
+    if (m.from !== undefined) {
+      const hits = src.split(m.from).length - 1;
+      if (hits !== m.count) {
+        console.log(`[SETUP-ERROR] ${m.id}: expected ${m.count} anchor occurrence(s), found ${hits}`);
+        console.log(`              anchor: ${m.from}`);
+        allGood = false;
+        continue;
+      }
+      guardText = src.replaceAll(m.from, m.to);
+    }
+
+    let extra = null;
+    if (m.artifact !== undefined) {
+      const orig = readFileSync(join(REPO_ROOT, m.artifact), 'utf8');
+      const hits = orig.split(m.artifactFrom).length - 1;
+      if (hits !== m.count) {
+        console.log(`[SETUP-ERROR] ${m.id}: expected ${m.count} occurrence(s) of ${JSON.stringify(m.artifactFrom)} in ${m.artifact}, found ${hits}`);
+        allGood = false;
+        continue;
+      }
+      const dst = join(suite, `artifact-${m.id}-${m.artifact.split('/').pop()}`);
+      writeFileSync(dst, orig.split(m.artifactFrom).join(m.artifactTo), 'utf8');
+      extra = { cornerLib: dst };
     }
 
     const path = join(suite, `mutant-${m.id}.mjs`);
-    writeFileSync(path, rehome(src.replaceAll(m.from, m.to), m.id), 'utf8');
+    writeFileSync(path, rehome(guardText, m.id, extra), 'utf8');
 
     let out = '', code = 0;
     // --only keeps the driver cheap: each mutant is run against just the cases
     // it is supposed to break, instead of all of them three times over.
+    const only = (m.onlyCases ?? m.expectCases).join(',');
     try {
-      out = execFileSync(NODE, [path, '--verbose', '--only=' + m.expectCases.join(',')],
+      out = execFileSync(NODE, [path, '--verbose', '--only=' + only],
         { encoding: 'utf8', maxBuffer: 1 << 26 });
     } catch (e) {
       out = String((e && e.stdout) || '') + String((e && e.stderr) || '');
@@ -107,15 +159,18 @@ try {
     }
 
     const failedCases = [...out.matchAll(/^\[FAIL\] (\S+)/gm)].map((x) => x[1]);
+    const passedCases = [...out.matchAll(/^\[PASS\] (\S+)/gm)].map((x) => x[1]);
     const drifted = [...out.matchAll(/^\s+\[(?:cf|inv)\].*DRIFTED\s*$/gm)].map((l) => l[0].trim());
     const summary = (out.match(/cases=\d+ assertions=\d+ failures=\d+/) || ['<no summary>'])[0];
     const caughtAll = m.expectCases.every((c) => failedCases.includes(c));
-    const ok = code === 1 && caughtAll;
+    const missedPass = (m.expectPass ?? []).filter((c) => !passedCases.includes(c));
+    const ok = code === 1 && caughtAll && missedPass.length === 0;
     if (!ok) allGood = false;
 
     console.log(`[${ok ? 'OK' : 'BAD'}] mutant ${m.id}: exit=${code}  ${summary}`);
     console.log(`       intent : ${m.what}`);
     console.log(`       caught : ${failedCases.length ? failedCases.join(', ') : 'NOTHING'}`);
+    if (missedPass.length) console.log(`       expected to stay green, but did not: ${missedPass.join(', ')}`);
     for (const d of drifted) console.log(`       red    : ${d}`);
   }
 } finally {

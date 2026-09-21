@@ -100,7 +100,7 @@
 //                     the most recently patched asset's digest, chosen by hand,
 //                     and nothing could see whether it still described what this
 //                     worker serves. Reproduce with: node scripts/shell-cache.mjs
-const CACHE = "icm-static-shell-0e52479ced0d";
+const CACHE = "icm-static-shell-45ae1f86cdbe";
 
 function scopeUrl() {
   return new URL(self.registration.scope);

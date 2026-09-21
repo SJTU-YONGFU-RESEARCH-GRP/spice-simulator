@@ -107,6 +107,16 @@ jobs:
       # ways and requires the guard to name each one.
       - name: Prove the shell-cache token check is not vacuous (mutation test)
         run: node scripts/shell-cache.negctl.mjs --static-only
+      # The panel has always offered a process-corner selector; until this
+      # repair the executor emitted no selector, the library had no corner
+      # parameters, and all three choices returned the same devices. Check 14
+      # (inside the artifact guard above) now ties the advertised corner list to
+      # the selector the deck emits and to the library that answers it. This step
+      # breaks that chain fifteen ways -- an emptied corner list, a dropped or
+      # mis-mapped selector, a renamed .param, a stripped run record, an
+      # unmodelled device -- and requires each to be named.
+      - name: Prove the corner-selection check is not vacuous (mutation test)
+        run: node scripts/corner-sweep.negctl.mjs
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:

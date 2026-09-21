@@ -1,17 +1,58 @@
 * Educational CMOS Level-1 (Shichman–Hodges) + BJT — browser SPICE profile
-* Included as: .include "/models/cmos.lib"
+* Included as: .include "/spice-simulator/models/cmos.lib"
 *
 * MOSFET: nmos_rvt pmos_rvt nmos_nat nmos_dep nmos_hvt pmos_hvt nmos_tox pmos_tox
 * BJT: npn_l1 pnp_l1
 * Teaching context: L ≈ 0.18 µm, VDD ≈ 1.8 V (thin ox).
 
-.model nmos_rvt NMOS LEVEL=1 VTO=0.5 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
-.model pmos_rvt PMOS LEVEL=1 VTO=-0.5 KP=100u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
-.model nmos_nat NMOS LEVEL=1 VTO=0.0 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
-.model nmos_dep NMOS LEVEL=1 VTO=-0.7 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
-.model nmos_hvt NMOS LEVEL=1 VTO=0.7 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
-.model pmos_hvt PMOS LEVEL=1 VTO=-0.7 KP=100u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
-.model nmos_tox NMOS LEVEL=1 VTO=0.7 KP=80u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
-.model pmos_tox PMOS LEVEL=1 VTO=-0.7 KP=40u GAMMA=0.4 PHI=0.7 LAMBDA=0.05
-.model npn_l1 NPN IS=1e-16 BF=100 NF=1 VAF=50 IKF=1e-2
-.model pnp_l1 PNP IS=1e-16 BF=50 NF=1 VAF=30 IKF=5e-3
+*
+* Process corners -- TEACHING-GRADE, not a PDK corner
+* ---------------------------------------------------
+*   __cn_sel = -1   ff  (fast)
+*   __cn_sel =  0   tt  (typical)  <- declared at the bottom of this header
+*   __cn_sel = +1   ss  (slow)
+*
+* A made-up spread on the Level-1 parameters, meant to show WHICH WAY a bias
+* point moves between corners, not to predict a real process. Do not read it
+* as SKY130 or as any foundry corner. Slow means |VTO| rises, KP falls and
+* current gain falls; fast is the reverse.
+*
+* WHY A SELECTOR RATHER THAN A .lib SECTION. The deck assembler includes this
+* file with .include, and the executor writes ngbehavior=lt into spinit.
+* Under that behaviour ngspice rewrites the .lib directive with a section
+* argument into a plain include of the whole file plus an include of the
+* section name as if it were a filename, so sectioned libraries cannot work
+* here at all -- measured against the shipped engine, not assumed. Re-declaring
+* a .model is no better: ngspice keeps the FIRST definition and reports
+* nothing, so a deck cannot override this file from below. What does work is
+* a parameter the deck redefines after the include, because parameters,
+* unlike models, are last-wins. That is the whole mechanism: one selector,
+* one expression per spread parameter, and the deck writes the selector only
+* when it means to.
+*
+* The selector line is emitted only for a named corner other than the typical
+* one, so a run that names no corner produces exactly the deck this library
+* produced before the corners existed. The spread parameters do reach the
+* solver through the expression evaluator rather than the literal parser, and
+* on a ten-device test circuit that path is worth up to 2e-13 relative, on the
+* collector current of the BJT leg. Measured, not assumed: an otherwise
+* identical literal copy of these same numbers agrees with this file to 1.9e-13,
+* and that literal copy run against itself agrees exactly, which is how the
+* expression path rather than the numbers was identified as the cause. Twelve
+* orders of magnitude below the smallest corner shift declared here.
+*
+* BJT IS and BF are spread too, deliberately: a corner that ignored half the
+* library would turn "sweep the corners on a BJT circuit" into three identical
+* answers, which is worse than not offering the corner at all.
+.param __cn_sel = 0
+
+.model nmos_rvt NMOS LEVEL=1 VTO={0.5+0.08*__cn_sel} KP={200u-30u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model pmos_rvt PMOS LEVEL=1 VTO={-0.5-0.08*__cn_sel} KP={100u-15u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model nmos_nat NMOS LEVEL=1 VTO={0.0+0.08*__cn_sel} KP={200u-30u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model nmos_dep NMOS LEVEL=1 VTO={-0.7+0.08*__cn_sel} KP={200u-30u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model nmos_hvt NMOS LEVEL=1 VTO={0.7+0.08*__cn_sel} KP={200u-30u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model pmos_hvt PMOS LEVEL=1 VTO={-0.7-0.08*__cn_sel} KP={100u-15u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model nmos_tox NMOS LEVEL=1 VTO={0.7+0.08*__cn_sel} KP={80u-12u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model pmos_tox PMOS LEVEL=1 VTO={-0.7-0.08*__cn_sel} KP={40u-6u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05
+.model npn_l1 NPN IS={1e-16*(1-0.25*__cn_sel)} BF={100*(1-0.15*__cn_sel)} NF=1 VAF=50 IKF=1e-2
+.model pnp_l1 PNP IS={1e-16*(1-0.25*__cn_sel)} BF={50*(1-0.15*__cn_sel)} NF=1 VAF=30 IKF=5e-3

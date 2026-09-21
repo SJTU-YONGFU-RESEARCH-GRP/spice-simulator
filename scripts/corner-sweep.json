@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "$comment": "Adds a working process-corner selection to the committed site/ artifact.\nsite/ is a build artifact whose editor sources are not in any public\nrepository, so a rebuild would drop all of this and nothing in the tree would\nnotice; check 14 of scripts/check-artifacts.mjs re-derives the claims below\nfrom the bytes on every run.\n\nThe odd part is that almost none of this is new capability. The simulation\npanel already renders a Process corner dropdown and a corner-sweep grid, the\nexecutor already lists \"corner\" in batch.sweepAxes, already refuses a corner\nthe profile does not list (SIMULATION_CORNER_UNSUPPORTED), and already carries\nenvironment.corner into the prepared-deck descriptor for its \".lib\" branch.\nThe circuit was wired end to end and never closed: the profile advertised\ncorners:[] and the library was a flat list of .model lines with no way to\nselect anything, so every corner control in the product was inert by\nconstruction. This manifest closes it, and check 14 pins it closed.",
+  "$how": "Applied with: node scripts/patch-outbound.mjs --manifest=scripts/corner-sweep.json (npm run patch:corner). Proven at runtime by scripts/numeric-crosscheck.mjs (the engine, through real decks) and scripts/example-outcomes.mjs (the panel, through a real browser).",
+  "$shape": "contract is check 14's CLAIM about the artifact; repairs are the MECHANISM that writes it. Kept separate on purpose: deleting a repair fails the check instead of silencing it. Repairs are ordered so that reading them top to bottom walks the data path -- what the panel offers, what reaches the deck, what the library does with it, what the run record says afterwards.",
+  "$mechanism": "Why a .param selector rather than the .lib section the code already had.\n\nThe assembler already knows how to emit \".lib <path> <section>\", and that is\nthe SPICE-native way to pick a corner. It cannot work here. The executor\nwrites ngbehavior=lt into spinit, and under that behaviour ngspice turns\n`.lib \"file\" section` into `.inc \"file\"` plus `.inc section` -- so it tries to\nopen a file named after the section. A four-way matrix run against the shipped\nengine settled it: sectioned libraries work under \"all\", \"hs\" and the default\nbehaviour, and fail under \"lt\" whether the sections are in a separate file or\ninside the included file itself.\n\nRe-declaring a .model from the deck to override the library is also out:\nngspice keeps the first definition and warns about nothing, so the override is\nsilently ignored. Parameters are the opposite -- last definition wins -- which\nis what makes a selector work. The deck writes the selector after the include,\nand only for a named corner other than the typical one, so the typical deck is\nbyte-identical to what this artifact produced before the corners existed.\n\nThe cost of the mechanism is a ULP-scale shift, and it is measured rather\nthan waved away. The spread parameters reach ngspice through its {} expression\nevaluator instead of the literal parser, and on a ten-device test circuit a\nliteral copy of the same numbers versus this parameterised copy differ by at\nmost 1.9e-13 relative, on the collector current of the BJT leg. Three runs\nattribute it: the same numbers written with braces differ from the same\nnumbers written bare by exactly that much, while the bare copy against itself\nis bit-identical and repeat runs are byte-identical. So the shift is the\nevaluator, not the arithmetic, and it is twelve orders below the smallest\ncorner shift the library declares.",
+  "contract": {
+    "$why": "Everything check 14 needs, kept in one place so the artifact and the check cannot drift apart silently.",
+    "profileId": "edu-cmos-ngspice-wasm-v1",
+    "corners": [
+      "tt",
+      "ss",
+      "ff"
+    ],
+    "typicalCorner": "tt",
+    "selectors": {
+      "tt": 0,
+      "ss": 1,
+      "ff": -1
+    },
+    "selectorParam": "__cn_sel",
+    "libraryFile": "models/cmos.lib",
+    "capabilityFile": "assets/src-CMkpkg0p.js",
+    "capabilityNeedle": "corners:[`tt`,`ss`,`ff`],devices:",
+    "descriptorNeedle": "{directive:`include`,path:t.modelLibrary.path,section:i.environment.corner??null}",
+    "reportNeedle": "oe({directive:`include`,path:$,section:t.environment?.corner??null})",
+    "emitterNeedle": "return`.include ${n}\\n.param __cn_sel=${v}`"
+  },
+  "targets": [],
+  "repairs": [
+    {
+      "id": "corner-capability",
+      "file": "assets/src-CMkpkg0p.js",
+      "why": "The capability object is the single source the panel, the corner sweep and the executor all read. corners:[] is why the Process corner dropdown rendered \"Unavailable\" and why the sweep grid drew no corner axis. Declaring the three teaching corners is what makes the controls that already exist live: the panel maps U?.corners to <option>s, defaults the selection to U?.corners[0] (so the default becomes the typical corner, which is the one the library already implements), and prepare() refuses any corner the profile does not list. Lowercase on purpose -- the deck sanitiser accepts a section only against /^[a-z0-9_.+-]+$/i, and the panel upper-cases the names for display.",
+      "edits": [
+        {
+          "find": "corners:[],devices:Ft",
+          "replace": "corners:[`tt`,`ss`,`ff`],devices:Ft"
+        }
+      ]
+    },
+    {
+      "id": "corner-descriptor",
+      "file": "assets/src-CMkpkg0p.js",
+      "why": "prepare() builds the model-library directive descriptor inline. Its \".lib\" branch already passed section: i.environment.corner, but the \".include\" branch -- the one this profile actually takes -- dropped the corner on the floor, so no corner could survive past this expression however the panel was driven. This carries it through, and passes null when the request names no corner so the emitted deck stays byte-identical for the default case.",
+      "edits": [
+        {
+          "find": "t.modelLibrary.directive===`include`?{directive:`include`,path:t.modelLibrary.path}:",
+          "replace": "t.modelLibrary.directive===`include`?{directive:`include`,path:t.modelLibrary.path,section:i.environment.corner??null}:"
+        }
+      ]
+    },
+    {
+      "id": "corner-selector-emit",
+      "file": "assets/src-CMkpkg0p.js",
+      "why": "The deck assembler's directive emitter. It returns the .include line for this profile; this appends the selector line for a named corner other than the typical one, and returns the plain include otherwise, so the typical deck is unchanged. The selector values live here rather than in the library because an unrecognised corner must fail loudly: the library cannot see the corner name, only a number, so a name-to-number map nobody validates would silently become \"typical\" for a typo. The panel uppercases for display only; the value that travels is lowercase, which is what the sanitiser upstream already enforces.",
+      "edits": [
+        {
+          "find": "if(e.directive===`include`)return`.include ${n}`;",
+          "replace": "if(e.directive===`include`){let c=e.section==null?null:String(e.section).trim();if(c===null||c===``||c===`tt`)return`.include ${n}`;let v=c===`ss`?1:c===`ff`?-1:NaN;if(!Number.isFinite(v))throw Error(`Unknown simulation corner ${c}; this build offers tt, ss and ff`);return`.include ${n}\\n.param __cn_sel=${v}`}"
+        }
+      ]
+    },
+    {
+      "id": "corner-report",
+      "file": "assets/src-CMkpkg0p.js",
+      "why": "A run record has to say which corner produced it. It cannot today: input carries only the three input digests plus deckSha256, and environment carries the profile id but not the corner, so a corner-swept run would export three records that are indistinguishable except by an opaque hash. The configuration field is the place for it, but both call sites pass a hard-coded literal, so the section has to be added to the literal as well as passed through the normaliser. That is what the three edits are: the normaliser (used for include descriptors) stops discarding the section, and each of the two byte-identical metadata literals gets it. They are indistinguishable by the literal alone, so each edit carries the preceding text that tells them apart -- the timeout/cancel result and the completed result.",
+      "edits": [
+        {
+          "find": "e.directive===`include`?{directive:`include`,section:null}",
+          "replace": "e.directive===`include`?{directive:`include`,section:e.section??null}"
+        },
+        {
+          "find": "`Simulation cancelled.`,durationMs:Date.now()-a,metadata:{schemaVersion:1,input:await re({inputRevision:t.inputRevision,netlist:t.netlist??``,testbench:t.testbench??i,deck:i}),configuration:oe({directive:`include`,path:$})",
+          "replace": "`Simulation cancelled.`,durationMs:Date.now()-a,metadata:{schemaVersion:1,input:await re({inputRevision:t.inputRevision,netlist:t.netlist??``,testbench:t.testbench??i,deck:i}),configuration:oe({directive:`include`,path:$,section:t.environment?.corner??null})"
+        },
+        {
+          "find": "log:c.log??``,durationMs:Date.now()-a,metadata:{schemaVersion:1,input:await re({inputRevision:t.inputRevision,netlist:t.netlist??``,testbench:t.testbench??i,deck:i}),configuration:oe({directive:`include`,path:$})",
+          "replace": "log:c.log??``,durationMs:Date.now()-a,metadata:{schemaVersion:1,input:await re({inputRevision:t.inputRevision,netlist:t.netlist??``,testbench:t.testbench??i,deck:i}),configuration:oe({directive:`include`,path:$,section:t.environment?.corner??null})"
+        }
+      ]
+    },
+    {
+      "id": "corner-library",
+      "file": "models/cmos.lib",
+      "why": "Two edits. The first is the corner spread itself: one selector parameter, and every spread parameter written as base+step*selector, so that selector 0 reproduces the historical typical value exactly. Both MOSFETs and BJTs are spread, because a corner that moved only half the devices would make \"sweep the corners on a BJT circuit\" return three identical answers. The second edit corrects a comment that was simply wrong: the header said the file is included as \"/models/cmos.lib\", while the executor's own constant is \"/spice-simulator/models/cmos.lib\" -- the deck really does say the latter, and a reader comparing the two would have concluded the library was not loaded at all.",
+      "edits": [
+        {
+          "find": ".model nmos_rvt NMOS LEVEL=1 VTO=0.5 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model pmos_rvt PMOS LEVEL=1 VTO=-0.5 KP=100u GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model nmos_nat NMOS LEVEL=1 VTO=0.0 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model nmos_dep NMOS LEVEL=1 VTO=-0.7 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model nmos_hvt NMOS LEVEL=1 VTO=0.7 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model pmos_hvt PMOS LEVEL=1 VTO=-0.7 KP=100u GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model nmos_tox NMOS LEVEL=1 VTO=0.7 KP=80u GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model pmos_tox PMOS LEVEL=1 VTO=-0.7 KP=40u GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model npn_l1 NPN IS=1e-16 BF=100 NF=1 VAF=50 IKF=1e-2\n.model pnp_l1 PNP IS=1e-16 BF=50 NF=1 VAF=30 IKF=5e-3",
+          "replace": "*\n* Process corners -- TEACHING-GRADE, not a PDK corner\n* ---------------------------------------------------\n*   __cn_sel = -1   ff  (fast)\n*   __cn_sel =  0   tt  (typical)  <- declared at the bottom of this header\n*   __cn_sel = +1   ss  (slow)\n*\n* A made-up spread on the Level-1 parameters, meant to show WHICH WAY a bias\n* point moves between corners, not to predict a real process. Do not read it\n* as SKY130 or as any foundry corner. Slow means |VTO| rises, KP falls and\n* current gain falls; fast is the reverse.\n*\n* WHY A SELECTOR RATHER THAN A .lib SECTION. The deck assembler includes this\n* file with .include, and the executor writes ngbehavior=lt into spinit.\n* Under that behaviour ngspice rewrites the .lib directive with a section\n* argument into a plain include of the whole file plus an include of the\n* section name as if it were a filename, so sectioned libraries cannot work\n* here at all -- measured against the shipped engine, not assumed. Re-declaring\n* a .model is no better: ngspice keeps the FIRST definition and reports\n* nothing, so a deck cannot override this file from below. What does work is\n* a parameter the deck redefines after the include, because parameters,\n* unlike models, are last-wins. That is the whole mechanism: one selector,\n* one expression per spread parameter, and the deck writes the selector only\n* when it means to.\n*\n* The selector line is emitted only for a named corner other than the typical\n* one, so a run that names no corner produces exactly the deck this library\n* produced before the corners existed. The spread parameters do reach the\n* solver through the expression evaluator rather than the literal parser, and\n* on a ten-device test circuit that path is worth up to 2e-13 relative, on the\n* collector current of the BJT leg. Measured, not assumed: an otherwise\n* identical literal copy of these same numbers agrees with this file to 1.9e-13,\n* and that literal copy run against itself agrees exactly, which is how the\n* expression path rather than the numbers was identified as the cause. Twelve\n* orders of magnitude below the smallest corner shift declared here.\n*\n* BJT IS and BF are spread too, deliberately: a corner that ignored half the\n* library would turn \"sweep the corners on a BJT circuit\" into three identical\n* answers, which is worse than not offering the corner at all.\n.param __cn_sel = 0\n\n.model nmos_rvt NMOS LEVEL=1 VTO={0.5+0.08*__cn_sel} KP={200u-30u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model pmos_rvt PMOS LEVEL=1 VTO={-0.5-0.08*__cn_sel} KP={100u-15u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model nmos_nat NMOS LEVEL=1 VTO={0.0+0.08*__cn_sel} KP={200u-30u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model nmos_dep NMOS LEVEL=1 VTO={-0.7+0.08*__cn_sel} KP={200u-30u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model nmos_hvt NMOS LEVEL=1 VTO={0.7+0.08*__cn_sel} KP={200u-30u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model pmos_hvt PMOS LEVEL=1 VTO={-0.7-0.08*__cn_sel} KP={100u-15u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model nmos_tox NMOS LEVEL=1 VTO={0.7+0.08*__cn_sel} KP={80u-12u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model pmos_tox PMOS LEVEL=1 VTO={-0.7-0.08*__cn_sel} KP={40u-6u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05\n.model npn_l1 NPN IS={1e-16*(1-0.25*__cn_sel)} BF={100*(1-0.15*__cn_sel)} NF=1 VAF=50 IKF=1e-2\n.model pnp_l1 PNP IS={1e-16*(1-0.25*__cn_sel)} BF={50*(1-0.15*__cn_sel)} NF=1 VAF=30 IKF=5e-3"
+        },
+        {
+          "find": "* Included as: .include \"/models/cmos.lib\"",
+          "replace": "* Included as: .include \"/spice-simulator/models/cmos.lib\""
+        }
+      ]
+    }
+  ]
+}

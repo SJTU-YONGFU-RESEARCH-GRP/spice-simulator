@@ -68,7 +68,7 @@
  * browser. One deck per process -- the runtime is not re-entrant -- so this
  * script re-execs itself once per case with --run=<i>.
  */
-import { existsSync, mkdtempSync, writeFileSync, copyFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, copyFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -241,6 +241,205 @@ function mosSweepInvariants({ vdd, rd, offUpTo }) {
 }
 
 // --------------------------------------------------------------------------
+// --------------------------------------------------------------------------
+// The process-corner group. Four decks that differ only in the selector line
+// the deck emitter would write, run against the library that ships in the
+// artifact -- so a library that stopped answering the selector, or a corner
+// whose spread was quietly dropped, fails here rather than only in a browser.
+//
+// The library is read from the tree, not transcribed, because the library is
+// the thing under test. The one thing frozen is the pre-corner device set, and
+// it is frozen on purpose: it is the oracle for "the default still means what it
+// always meant", and an oracle that moved with the artifact could not say that.
+// --------------------------------------------------------------------------
+const CORNER_LIB_PATH = '/spice-simulator/models/cmos.lib';
+const CORNER_LIB_FILE = join(REPO_ROOT, 'site', 'models', 'cmos.lib');
+const CORNER_SENSE = Array.from({ length: 10 }, (_, i) => 'i(vs' + (i + 1) + ')');
+const CORNER_DEVICES = [
+  'nmos_rvt', 'nmos_nat', 'nmos_dep', 'nmos_hvt', 'nmos_tox',
+  'pmos_rvt', 'pmos_hvt', 'pmos_tox', 'npn_l1', 'pnp_l1',
+];
+
+// The device set as it shipped before the corners existed (commit 1303d81).
+const FROZEN_TYPICAL_MODELS = [
+  '.model nmos_rvt NMOS LEVEL=1 VTO=0.5 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05',
+  '.model pmos_rvt PMOS LEVEL=1 VTO=-0.5 KP=100u GAMMA=0.4 PHI=0.7 LAMBDA=0.05',
+  '.model nmos_nat NMOS LEVEL=1 VTO=0.0 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05',
+  '.model nmos_dep NMOS LEVEL=1 VTO=-0.7 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05',
+  '.model nmos_hvt NMOS LEVEL=1 VTO=0.7 KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05',
+  '.model pmos_hvt PMOS LEVEL=1 VTO=-0.7 KP=100u GAMMA=0.4 PHI=0.7 LAMBDA=0.05',
+  '.model nmos_tox NMOS LEVEL=1 VTO=0.7 KP=80u GAMMA=0.4 PHI=0.7 LAMBDA=0.05',
+  '.model pmos_tox PMOS LEVEL=1 VTO=-0.7 KP=40u GAMMA=0.4 PHI=0.7 LAMBDA=0.05',
+  '.model npn_l1 NPN IS=1e-16 BF=100 NF=1 VAF=50 IKF=1e-2',
+  '.model pnp_l1 PNP IS=1e-16 BF=50 NF=1 VAF=30 IKF=5e-3',
+].join('\n') + '\n';
+
+// Ten devices, each fed through a 0 V sense source so its branch current is a
+// rawfile variable. Magnitudes are compared: ngspice's sign for i(vxxx) follows
+// the element's node order, and the claim here is about current, not polarity.
+// The BJT bases are biased so both devices sit in the active region -- a
+// transistor that is simply off would still "change" between corners, on
+// leakage, and would pass an ordering test for the wrong reason.
+const CORNER_CIRCUIT = [
+  'VDD vdd 0 1.8',
+  'VCC vcc 0 1.8',
+  'VG  g  0 0.9',
+  'VGP gp 0 0',
+  'VS1 vdd m1 0',
+  'M1 m1 g 0 0 nmos_rvt W=10u L=1u',
+  'VS2 vdd m2 0',
+  'M2 m2 g 0 0 nmos_nat W=10u L=1u',
+  'VS3 vdd m3 0',
+  'M3 m3 g 0 0 nmos_dep W=10u L=1u',
+  'VS4 vdd m4 0',
+  'M4 m4 g 0 0 nmos_hvt W=10u L=1u',
+  'VS5 vdd m5 0',
+  'M5 m5 g 0 0 nmos_tox W=10u L=1u',
+  'VS6 m6 0 0',
+  'MP1 m6 gp vdd vdd pmos_rvt W=10u L=1u',
+  'VS7 m7 0 0',
+  'MP2 m7 gp vdd vdd pmos_hvt W=10u L=1u',
+  'VS8 m8 0 0',
+  'MP3 m8 gp vdd vdd pmos_tox W=10u L=1u',
+  'RB1 vdd b1 100k',
+  'VS9 vcc c1 0',
+  'Q1 c1 b1 0 npn_l1',
+  'RB2 b2 0 100k',
+  'VS10 c2 0 0',
+  'Q2 c2 b2 vcc pnp_l1',
+].join('\n');
+
+/** The deck the assembler would build for this selector: include, then selector. */
+function cornerDeck(selector) {
+  const lines = ['* SPICE simulation deck', '.include "' + CORNER_LIB_PATH + '"'];
+  if (selector !== null) lines.push('.param __cn_sel=' + selector);
+  lines.push(CORNER_CIRCUIT, '.op', '.end');
+  return lines.join('\n') + '\n';
+}
+
+function cornerLibrary() {
+  try { return readFileSync(CORNER_LIB_FILE, 'utf8'); } catch { return null; }
+}
+
+/** A corner is only revealed by its devices if all of them are conducting. */
+function cornerConductsInvariant(X) {
+  const dead = [];
+  for (const name of CORNER_SENSE) {
+    const j = X.index(name);
+    const a = (j < 0 || X.parsed.points.length === 0)
+      ? null
+      : Math.abs(Number(String(X.parsed.points[0][j]).split(',')[0]));
+    if (a === null || !(a > 1e-9)) dead.push(name + '=' + String(a));
+  }
+  return {
+    label: 'every sense source carries > 1 nA',
+    actual: CORNER_SENSE.length - dead.length, expected: CORNER_SENSE.length,
+    relError: null,
+    detail: dead.length ? 'not conducting: ' + dead.join(', ') : 'all ten devices in the active region',
+    ok: dead.length === 0,
+  };
+}
+
+function cornerCases() {
+  const shipped = cornerLibrary();
+  const shared = {
+    corner: true,
+    rtol: 1e-9,
+    files: shipped === null ? {} : { [CORNER_LIB_PATH]: shipped },
+    invariants: [cornerConductsInvariant],
+  };
+  return [
+    { name: 'corner_default', what: 'shipped library, no selector line', deck: cornerDeck(null), ...shared },
+    { name: 'corner_ss', what: 'shipped library, slow corner', deck: cornerDeck(1), ...shared },
+    { name: 'corner_ff', what: 'shipped library, fast corner', deck: cornerDeck(-1), ...shared },
+    {
+      name: 'corner_frozen', what: 'the device set that shipped before the corners, no selector',
+      deck: cornerDeck(null), ...shared, files: { [CORNER_LIB_PATH]: FROZEN_TYPICAL_MODELS },
+    },
+  ];
+}
+
+/** First value of a name in an op rawfile, or null. */
+function opValue(parsed, name) {
+  const j = parsed.variables.findIndex((v) => v.name.toLowerCase() === name.toLowerCase());
+  if (j < 0 || parsed.points.length === 0) return null;
+  const v = Number(String(parsed.points[0][j]).split(',')[0]);
+  return Number.isFinite(v) ? v : null;
+}
+
+// --------------------------------------------------------------------------
+// Cross-case checks. These need more than one run, so they cannot live in a
+// case's own invariant list. The two are deliberately independent: one is about
+// the DEFAULT not moving, the other about the CORNERS moving. A mutant that
+// makes the selector inert must break the second and leave the first alone, and
+// that is exactly what scripts/numeric-crosscheck.negctl.mjs asserts.
+// --------------------------------------------------------------------------
+const CORNER_CROSS = [
+  {
+    name: 'corner_default_matches_frozen',
+    what: 'the library with no selector reproduces the pre-corner device set',
+    needs: ['corner_default', 'corner_frozen'],
+    check(byName) {
+      const a = byName.get('corner_frozen');
+      const b = byName.get('corner_default');
+      let worst = 0;
+      let where = 'none';
+      let compared = 0;
+      for (const v of a.variables) {
+        const x = opValue(a, v.name);
+        const y = opValue(b, v.name);
+        if (x === null || y === null || x === 0) continue;
+        compared += 1;
+        const rel = Math.abs(y - x) / Math.abs(x);
+        if (rel > worst) { worst = rel; where = v.name + ' pre-corner=' + expo(x) + ' shipped=' + expo(y); }
+      }
+      const pass = compared > 0 && worst <= 1e-12;
+      return [{
+        kind: 'cross', var: 'worst relative difference over ' + compared + ' variables',
+        actual: worst, expected: 0, relError: worst,
+        detail: 'at ' + where + '; the spread parameters reach the solver through the expression evaluator, ' +
+          'which is worth about 2e-13 -- the tolerance is 1e-12, five times that, and twelve orders below the ' +
+          'smallest corner shift',
+        pass,
+      }];
+    },
+  },
+  {
+    name: 'corner_shifts_every_device',
+    what: 'ss is slower and ff is faster for every device, with the typical corner between them',
+    needs: ['corner_default', 'corner_ss', 'corner_ff'],
+    check(byName) {
+      const d = byName.get('corner_default');
+      const s = byName.get('corner_ss');
+      const f = byName.get('corner_ff');
+      const items = [];
+      for (let i = 0; i < CORNER_SENSE.length; i++) {
+        const n = CORNER_SENSE[i];
+        const x = opValue(d, n), y = opValue(s, n), z = opValue(f, n);
+        if (x === null || y === null || z === null) {
+          items.push({ kind: 'cross', var: n, detail: 'not a finite value in all three runs', pass: false });
+          continue;
+        }
+        const A = Math.abs(x), B = Math.abs(y), C = Math.abs(z);
+        const ordered = B < A && A < C;
+        const shift = A === 0 ? 0 : Math.abs(B - A) / A;
+        // The shift floor is what stops this from passing on numerical noise:
+        // three identical answers trivially satisfy a "<=" but not a "<", and a
+        // corner that moved a device by 1e-15 would be no corner at all.
+        const material = shift >= 1e-3;
+        items.push({
+          kind: 'cross', var: n + ' (' + CORNER_DEVICES[i] + ')',
+          actual: B, expected: null, relError: shift,
+          detail: '|I| ff=' + expo(C) + '  tt=' + expo(A) + '  ss=' + expo(B) +
+            '  ss shift=' + expo(shift) + (material ? '' : ' (below the 1e-3 floor)'),
+          pass: ordered && material,
+        });
+      }
+      return items;
+    },
+  },
+];
+
 // cases: deck + channel-2 oracle. No ngspice on this side.
 // --------------------------------------------------------------------------
 const CASES = [
@@ -495,6 +694,7 @@ const CASES = [
       },
     ],
   },
+  ...cornerCases(),
 ];
 
 // --------------------------------------------------------------------------
@@ -557,6 +757,13 @@ async function runOne(index) {
   mod.FS.writeFile('/proc/self/statm', '0 0 0 0 0 0 0\n');
   mod.FS.writeFile('/usr/local/share/ngspice/scripts/spinit',
     'set filetype=ascii\nset ngbehavior=lt\n');
+  // Extra files the case needs inside the virtual FS. The corner cases put the
+  // artifact's own model library at the path the executor's constant resolves
+  // to, so the deck text is the deck the application would assemble.
+  for (const [p, text] of Object.entries(c.files ?? {})) {
+    mkdirp(p.slice(0, p.lastIndexOf('/')));
+    mod.FS.writeFile(p, text);
+  }
   mod.FS.writeFile('/circuit.cir', c.deck.trim());
   try { mod.FS.unlink('/out.raw'); } catch {}
   mod.noExitRuntime = true;
@@ -664,6 +871,7 @@ async function main() {
   }
 
   const rows = [];
+  const parsedByCase = new Map();
   let failures = 0, assertions = 0;
   for (const i of indices) {
     const c = CASES[i];
@@ -682,6 +890,7 @@ async function main() {
       continue;
     }
     const X = makeCtx(parsed);
+    parsedByCase.set(c.name, parsed);
 
     // pick the output point to compare against (per-check closed-form cases)
     let point = 0, axisVal = null;
@@ -723,6 +932,26 @@ async function main() {
       case: c.name, what: c.what, status: ok ? 'PASS' : 'FAIL', rtol: c.rtol,
       plot: parsed.plotname, axis: axisVal, items,
     });
+  }
+
+  // Cross-case checks, run only when every case they need produced a rawfile.
+  // Under --only a missing input is reported as SKIP rather than PASS: a
+  // focused run is a debugging tool, and a skipped check that printed "ok"
+  // would be the hollow green this whole script exists to avoid.
+  for (const x of CORNER_CROSS) {
+    const absent = x.needs.filter((n) => !parsedByCase.has(n));
+    if (absent.length > 0) {
+      rows.push({
+        case: x.name, what: x.what, status: 'SKIP',
+        detail: 'needs ' + absent.join(', ') + ', which this run did not execute',
+      });
+      continue;
+    }
+    const items = x.check(parsedByCase);
+    const ok = items.every((it) => it.pass);
+    if (!ok) failures++;
+    assertions += items.length;
+    rows.push({ case: x.name, what: x.what, status: ok ? 'PASS' : 'FAIL', items });
   }
 
   const report = {

@@ -80,7 +80,16 @@
  *                   is cache-first without revalidation -- so a stale constant
  *                   hides every hand-patch from every returning client for
  *                   good. Derived, not chosen: see scripts/shell-cache.mjs.
- *  14. (meta)       Accepted deviations that matched nothing. Printed only when
+ *  14. cornerSweep The simulation profile must advertise a set of process
+ *                   corners, the deck emitter must map each advertised corner to
+ *                   a selector, and the model library must answer it. All three
+ *                   are checked against the artifact's own bytes, and the
+ *                   library's directive lines are compared against the ones the
+ *                   repair declares, so the manifest and the tree cannot drift
+ *                   apart in either direction. Without this the panel keeps
+ *                   rendering a Process corner dropdown that changes nothing.
+ *                   See checkCornerSweep.
+ *  15. (meta)       Accepted deviations that matched nothing. Printed only when
  *                   there are any, and never silenceable.
  *
  * The rule in (1) is deliberately narrow: a reference is reported only when
@@ -107,6 +116,8 @@
  *                  Default: scripts/outbound-manifest.json when it exists.
  *   --csp=<file>   Manifest of the deploy shell's Content-Security-Policy for
  *                  check 11. Default: scripts/shell-csp.json when it exists.
+ *   --corner=<file>  Manifest of the process-corner selection for check 14.
+ *                  Default: scripts/corner-sweep.json when it exists.
  *   --json=<file>  Also write findings as JSON.
  *
  * Exit codes: 0 clean or only accepted deviations, 1 findings, 2 usage or IO
@@ -159,7 +170,7 @@ const kib = (bytes) => (bytes / 1024).toFixed(1);
 function parseArgs(argv) {
   const out = {
     site: join(REPO_ROOT, 'site'), base: null, strict: false, json: null, accept: null,
-    outbound: null, csp: null, precache: null,
+    outbound: null, csp: null, precache: null, corner: null,
   };
   for (const arg of argv) {
     // An empty value would silently resolve to the current directory and scan
@@ -172,6 +183,7 @@ function parseArgs(argv) {
     else if (arg.startsWith('--outbound=')) out.outbound = resolve(REPO_ROOT, arg.slice('--outbound='.length));
     else if (arg.startsWith('--csp=')) out.csp = resolve(REPO_ROOT, arg.slice('--csp='.length));
     else if (arg.startsWith('--precache=')) out.precache = resolve(REPO_ROOT, arg.slice('--precache='.length));
+    else if (arg.startsWith('--corner=')) out.corner = resolve(REPO_ROOT, arg.slice('--corner='.length));
     else if (arg.startsWith('--json=')) out.json = arg.slice('--json='.length);
     else return { error: 'unknown argument: ' + arg };
   }
@@ -1383,6 +1395,329 @@ function callArgs(text, open) {
   return null;
 }
 
+// --------------------------------------------------------------------------
+// 14. corner sweep
+// --------------------------------------------------------------------------
+// The capability blob. `id:` and `devices:` hold identifiers rather than
+// literals -- the minifier lifts both out -- so this captures the names and the
+// check resolves them; only the corner list is an inline literal, which is the
+// one that has to be compared with what the manifest declares.
+const PROFILE_CORNERS = /profiles:\[\{id:([A-Za-z_$][\w$]*),label:`[^`]*`,corners:\[([^\]]*)\],devices:([A-Za-z_$][\w$]*)\}/;
+const SELECTOR_MAP = /c===`([^`]+)`\?(-?\d+):/g;
+const SELECTOR_EMIT = /\.param ([A-Za-z_][A-Za-z0-9_]*)=\$\{v\}/g;
+const TICKED = /`([^`]+)`/g;
+
+/**
+ * A process corner has to be closed on both sides: the profile the panel reads
+ * must offer the corners, and the library must actually move when one is
+ * selected. Either half alone looks exactly like a working feature -- the
+ * dropdown still renders, the run still completes, and the executor still
+ * advertises "corner" among its sweep axes -- which is why nothing here is
+ * taken on trust. The corner list is parsed out of the capability blob, the
+ * name-to-selector map is parsed out of the deck emitter, and the library's
+ * directive lines are compared against the ones the repair itself declares, so
+ * the manifest cannot drift away from the artifact in either direction.
+ *
+ * The model numbers are the one thing declared rather than derived, for the
+ * same reason check 11 declares the policy: an artifact whose editor sources
+ * are not public has nowhere else to state what the library is meant to hold,
+ * and a hand edit there should show up as a line a reviewer reads.
+ */
+function checkCornerSweep(site, manifestPath) {
+  const out = { status: 'checked', corners: [], devices: [], findings: [], notes: [] };
+  if (manifestPath === null || !existsSync(manifestPath)) {
+    out.status = 'unavailable';
+    out.notes.push('no corner manifest (pass --corner=<file> to enable this check)');
+    return out;
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  } catch (e) {
+    out.status = 'unreadable';
+    out.notes.push('cannot parse ' + manifestPath + ': ' + e.message);
+    return out;
+  }
+  const ref = slash(manifestPath.slice(REPO_ROOT.length + 1));
+  const contract = manifest.contract ?? {};
+  const corners = contract.corners;
+  const typical = contract.typicalCorner;
+  const selectors = contract.selectors;
+  if (!Array.isArray(corners) || corners.length < 2 || typeof typical !== 'string' ||
+      selectors === null || typeof selectors !== 'object') {
+    // An empty or absent contract would make every rule below vacuous while
+    // still printing "ok", which is the failure mode this guard exists for.
+    out.findings.push({
+      key: 'corner-contract-vacuous', ref,
+      notes: ['the manifest declares no usable corner contract, so nothing here would be verified'],
+    });
+    return out;
+  }
+  out.corners = corners;
+  out.typical = typical;
+  if (!corners.includes(typical)) {
+    out.findings.push({
+      key: 'corner-typical-not-declared', ref,
+      notes: [
+        'typicalCorner ' + JSON.stringify(typical) + ' is not among corners ' + JSON.stringify(corners),
+        'the panel selects corners[0] by default and the library implements the typical corner with its',
+        'declared default selector, so a contract that separates them describes a default nobody gets',
+      ],
+    });
+  }
+
+  const countOcc = (text, needle) => {
+    let n = 0;
+    let at = 0;
+    for (;;) {
+      const i = text.indexOf(needle, at);
+      if (i === -1) return n;
+      n += 1;
+      at = i + needle.length;
+    }
+  };
+  const readAt = (rel) => {
+    const path = join(site, rel.split('/').join('\\'));
+    return existsSync(path) ? readFileSync(path, 'utf8') : null;
+  };
+
+  // --- 0. applicability. This check reasons about the *deploy artifact*, and a
+  //        tree that carries neither half of the feature is not it -- the
+  //        negative controls for other checks build two-file trees under the
+  //        system temp directory, and reporting nine findings against a stub
+  //        would make every one of them fail for a reason that has nothing to do
+  //        with what it tests. The gate is deliberately "does this tree claim
+  //        the feature at all?" and NOT "is the file present?": the failure this
+  //        check exists for is exactly *controls present, library gone*, so an
+  //        absent library must be reported, not skipped. A tree is about corners
+  //        when the capability blob parses (an empty `corners:[]` still counts,
+  //        which is what keeps the unpatched artifact reviewable) or when the
+  //        library the manifest names exists.
+  const capProbe = readAt(contract.capabilityFile ?? '');
+  const libProbe = readAt(contract.libraryFile ?? '');
+  if (!(capProbe !== null && PROFILE_CORNERS.test(capProbe)) && libProbe === null) {
+    out.status = 'absent';
+    out.notes.push('this tree carries neither the corner controls nor the corner library');
+    return out;
+  }
+
+  // --- 1. the repairs themselves. A rebuild is the single most likely way for
+  //        this feature to disappear, and a tree with the capability but not the
+  //        library (or the reverse) is worse than one with neither: the control
+  //        still lights up and still does nothing.
+  for (const repair of manifest.repairs ?? []) {
+    const text = readAt(repair.file);
+    if (text === null) {
+      out.findings.push({
+        key: 'corner-repair-file-absent:' + repair.id, ref: repair.file,
+        notes: ['this repair targets a file that is not in this tree'],
+      });
+      continue;
+    }
+    for (const [i, edit] of (repair.edits ?? []).entries()) {
+      const n = countOcc(text, edit.replace);
+      if (n === 1) continue;
+      out.findings.push({
+        key: 'corner-repair-missing:' + repair.id + '#' + i, ref: repair.file,
+        notes: [
+          n === 0
+            ? 'repair ' + repair.id + ' edit #' + i + ' is not present in the artifact'
+            : 'repair ' + repair.id + ' edit #' + i + ' appears ' + n +
+              ' times, so the tree is neither repaired nor repairable',
+          'apply with: node scripts/patch-outbound.mjs --manifest=' + ref,
+        ],
+      });
+    }
+  }
+
+  // --- 2. what the profile advertises, parsed out of the capability object.
+  const capText = readAt(contract.capabilityFile ?? '');
+  if (capText === null) {
+    out.findings.push({
+      key: 'corner-capability-file-absent', ref: String(contract.capabilityFile),
+      notes: ['the chunk that advertises the profile is not in this tree'],
+    });
+  } else {
+    const blob = PROFILE_CORNERS.exec(capText);
+    if (blob === null) {
+      out.findings.push({
+        key: 'corner-capability-missing', ref: contract.capabilityFile,
+        notes: ['no profile blob matching id/label/corners/devices, so nothing advertises corners at all'],
+      });
+    } else {
+      const advertised = [...blob[2].matchAll(TICKED)].map((m) => m[1]);
+      out.corners = advertised;
+      const binder = new RegExp('(?:^|[,;{])\\s*' + blob[3] + '\\s*=\\s*\\[([^\\]]*)\\]');
+      const dev = binder.exec(capText);
+      out.devices = dev === null ? [] : [...dev[1].matchAll(TICKED)].map((m) => m[1]);
+      if (dev === null) {
+        out.findings.push({
+          key: 'corner-devices-unresolved', ref: contract.capabilityFile,
+          notes: ['profiles[0].devices is the identifier ' + JSON.stringify(blob[3]) +
+            ' and no single array literal binds it, so the device list cannot be checked'],
+        });
+      }
+      if (advertised.join(',') !== corners.join(',')) {
+        out.findings.push({
+          key: 'corner-capability-mismatch', ref: contract.capabilityFile,
+          notes: [
+            'the artifact advertises ' + JSON.stringify(advertised) +
+              ', the manifest declares ' + JSON.stringify(corners),
+            'order matters: corners[0] is what the panel selects before the user touches anything',
+          ],
+        });
+      }
+      if (advertised[0] !== undefined && advertised[0] !== typical) {
+        out.findings.push({
+          key: 'corner-capability-default-not-typical', ref: contract.capabilityFile,
+          notes: [
+            'the panel defaults to corners[0] = ' + JSON.stringify(advertised[0]) +
+              ', which is not the typical corner ' + JSON.stringify(typical),
+          ],
+        });
+      }
+
+      // --- 3. the emitter: which corner name maps to which number, and which
+      //        parameter the deck writes.
+      //
+      // Two scans, deliberately independent. The parameter name is a whole-file
+      // match, so it is checked whether or not the emission needle below still
+      // matches -- renaming the parameter is exactly the case where the needle
+      // stops matching, and reporting only "the emitter changed" would leave the
+      // reason unstated. The name-to-number map has to be scoped, because the
+      // bundle contains other `x===\`y\`?1:` ternaries (an analysis selector
+      // among them) and a whole-file scan would report those as corners. That
+      // scope is a window around the emission, so it is only meaningful while
+      // the emission itself is found; when it is not, corner-emitter-missing
+      // already fails the check and the map below is not consulted.
+      const emitted = [...capText.matchAll(SELECTOR_EMIT)].map((m) => m[1]);
+      if (emitted.length !== 1 || emitted[0] !== contract.selectorParam) {
+        out.findings.push({
+          key: 'corner-selector-param-mismatch', ref: contract.capabilityFile,
+          notes: ['the deck writes ' + JSON.stringify(emitted) + ', the manifest declares the parameter ' +
+            JSON.stringify(contract.selectorParam) + ' -- a name the library has never heard of would make',
+            'ngspice ignore the selector and report nothing at all'],
+        });
+      }
+
+      const emitNeedle = contract.emitterNeedle;
+      const at = emitNeedle ? capText.indexOf(emitNeedle) : -1;
+      if (at < 0) {
+        out.findings.push({
+          key: 'corner-emitter-missing', ref: contract.capabilityFile,
+          notes: ['the deck emitter no longer contains the declared selector emission',
+            JSON.stringify(emitNeedle ?? '(no emitterNeedle in the manifest)')],
+        });
+      } else {
+        const window = capText.slice(Math.max(0, at - 400), at + emitNeedle.length);
+        const mapped = new Map();
+        for (const m of window.matchAll(SELECTOR_MAP)) {
+          if (!mapped.has(m[1])) mapped.set(m[1], Number(m[2]));
+        }
+        for (const name of corners) {
+          if (name === typical) {
+            if (mapped.has(name)) {
+              out.findings.push({
+                key: 'corner-selector-typical-mapped', ref: contract.capabilityFile,
+                notes: ['the typical corner is mapped to a selector, so the default run would emit a',
+                  'selector line too and every existing deck would change'],
+              });
+            }
+            continue;
+          }
+          if (!mapped.has(name)) {
+            out.findings.push({
+              key: 'corner-selector-missing:' + name, ref: contract.capabilityFile,
+              notes: ['the profile advertises ' + JSON.stringify(name) + ' and the emitter has no selector for it,',
+                'so choosing it would produce the typical deck -- a control that lights up and does nothing'],
+            });
+            continue;
+          }
+          if (mapped.get(name) !== selectors[name]) {
+            out.findings.push({
+              key: 'corner-selector-value:' + name, ref: contract.capabilityFile,
+              notes: ['the emitter maps ' + name + ' to ' + mapped.get(name) +
+                ', the manifest declares ' + selectors[name]],
+            });
+          }
+        }
+        for (const name of mapped.keys()) {
+          if (!corners.includes(name)) {
+            out.findings.push({
+              key: 'corner-selector-extra:' + name, ref: contract.capabilityFile,
+              notes: ['the emitter can select ' + JSON.stringify(name) + ', which no profile advertises'],
+            });
+          }
+        }
+      }
+      if (contract.descriptorNeedle && !capText.includes(contract.descriptorNeedle)) {
+        out.findings.push({
+          key: 'corner-descriptor-missing', ref: contract.capabilityFile,
+          notes: ['the prepared-deck descriptor no longer carries environment.corner into the include branch,',
+            'so the corner the panel sends is dropped before any deck is assembled'],
+        });
+      }
+      if (contract.reportNeedle && !capText.includes(contract.reportNeedle)) {
+        out.findings.push({
+          key: 'corner-report-missing', ref: contract.capabilityFile,
+          notes: ['the run record no longer names the corner, so three corner-swept runs export three',
+            'records that differ only by an opaque deck hash'],
+        });
+      }
+    }
+  }
+
+  // --- 4. the library. Compared against the directive lines the repair itself
+  //        declares, so the manifest is the single place either side is written
+  //        and a hand edit shows up as a mismatch rather than passing.
+  const libText = readAt(contract.libraryFile ?? '');
+  if (libText === null) {
+    out.findings.push({
+      key: 'corner-library-absent', ref: String(contract.libraryFile),
+      notes: ['the model library is not in this tree'],
+    });
+  } else {
+    const libRepair = (manifest.repairs ?? []).find((r) => r.file === contract.libraryFile);
+    const declared = libRepair
+      ? libRepair.edits.flatMap((e) => e.replace.split('\n'))
+        .map((l) => l.trim()).filter((l) => /^\.(?:model|param)\s/.test(l))
+      : null;
+    const actual = libText.split('\n').map((l) => l.trim()).filter((l) => /^\.(?:model|param)\s/.test(l));
+    if (declared === null || declared.length === 0) {
+      out.findings.push({
+        key: 'corner-library-repair-absent', ref,
+        notes: ['the manifest declares no repair for ' + contract.libraryFile +
+          ', so there is nothing to compare the library against'],
+      });
+    } else if (declared.join('\n') !== actual.join('\n')) {
+      let first = 0;
+      while (first < declared.length && declared[first] === actual[first]) first += 1;
+      out.findings.push({
+        key: 'corner-library-drift', ref: contract.libraryFile,
+        notes: [
+          'the library\'s directive lines are not the ones the repair declares (' +
+            declared.length + ' declared, ' + actual.length + ' in the artifact)',
+          'first difference at line ' + first + ': declared ' + JSON.stringify(declared[first] ?? null) +
+            ', artifact ' + JSON.stringify(actual[first] ?? null),
+        ],
+      });
+    }
+    // The device list the profile advertises has to be something the library
+    // declares a model for. A corner sweep over a device the library never
+    // defined fails inside the engine, where the panel cannot explain it.
+    for (const name of out.devices) {
+      if (!new RegExp('^\\.model\\s+' + name + '\\s', 'm').test(libText)) {
+        out.findings.push({
+          key: 'corner-device-unmodelled:' + name, ref: contract.libraryFile,
+          notes: ['the profile advertises device ' + JSON.stringify(name) + ' and the library declares no model for it'],
+        });
+      }
+    }
+  }
+
+  return out;
+}
+
 function checkServiceWorkerCache(site) {
   const swPath = join(site, 'sw.js');
   if (!existsSync(swPath)) {
@@ -1553,7 +1888,8 @@ async function main() {
   // a quiet "check skipped". Otherwise deleting the manifest would be a way to
   // silence the check that reads it -- the check would print "--" where it used
   // to print "ok", and nothing would fail.
-  for (const [flag, p] of [['--outbound', args.outbound], ['--csp', args.csp], ['--precache', args.precache]]) {
+  for (const [flag, p] of [['--outbound', args.outbound], ['--csp', args.csp],
+    ['--precache', args.precache], ['--corner', args.corner]]) {
     if (p !== null && !existsSync(p)) {
       console.error(flag + ' was given but the file does not exist: ' + p);
       return 2;
@@ -1600,6 +1936,10 @@ async function main() {
   const defaultPrecache = join(REPO_ROOT, 'scripts', 'precache-budget.json');
   const precachePath = args.precache ?? (existsSync(defaultPrecache) ? defaultPrecache : null);
   push('  precache = ' + (precachePath ?? 'none'));
+
+  const defaultCorner = join(REPO_ROOT, 'scripts', 'corner-sweep.json');
+  const cornerPath = args.corner ?? (existsSync(defaultCorner) ? defaultCorner : null);
+  push('  corner   = ' + (cornerPath ?? 'none'));
 
   const refs = checkBaseRefs(site, normalised, args.strict);
   push('  scanned ' + refs.scanned + ' text files, ' + (refs.bytes / 1024).toFixed(0) + ' KiB');
@@ -1658,6 +1998,7 @@ async function main() {
   const csp = checkShellCsp(site, cspPath, outboundPath);
   const swcache = checkServiceWorkerCache(site);
   const shellCache = shellCacheState(site);
+  const corner = checkCornerSweep(site, cornerPath);
   const jsxFactoryList = jsxFactory
     .filter((r) => r.failures.length > 0)
     .map((r) => ({
@@ -1677,7 +2018,7 @@ async function main() {
   const lists = [
     escapedList, missingList, externalList, jsxList, shellList, jsxFactoryList,
     jsxSites.findings, egress.findings, storage.findings, csp.findings,
-    swcache.findings, shellCache.findings,
+    swcache.findings, shellCache.findings, corner.findings,
   ];
   for (const list of lists) {
     for (const f of list) {
@@ -1849,9 +2190,25 @@ async function main() {
     for (const n of shellCache.notes.slice(0, 2)) push('      ' + n);
   }
 
+  push('');
+  push('14. process corner selection');
+  push('   (the profile the panel reads must advertise the corners, the deck emitter must map each of ' +
+    'them to a selector, and the model library must answer that selector -- a tree with the controls ' +
+    'but not the library offers three corners that all return the typical answer)');
+  if (corner.status !== 'checked') {
+    push('  --  ' + corner.notes.join('; '));
+  } else if (corner.findings.length === 0) {
+    push('  ok  ' + corner.corners.length + ' corner(s) ' + JSON.stringify(corner.corners) +
+      ' over ' + corner.devices.length + ' device(s), typical=' + JSON.stringify(corner.typical) +
+      ', selector emitted for ' + corner.corners.filter((c) => c !== corner.typical).join('/'));
+  } else {
+    push(...render(corner.findings, 'corner findings',
+      'the corner controls exist but do not change the answer', accepted));
+  }
+
   if (stale.length > 0) {
     push('');
-    push('14. stale accepted deviations');
+    push('15. stale accepted deviations');
     push(...render(stale, 'accepted entries that matched nothing', null, () => false));
   }
 
@@ -1915,6 +2272,15 @@ async function main() {
         payloadDirs: shellCache.payloadDirs ?? [],
         findings: shellCache.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
         notes: shellCache.notes,
+      },
+      cornerSweep: {
+        manifest: cornerPath,
+        status: corner.status,
+        corners: corner.corners,
+        typical: corner.typical,
+        devices: corner.devices,
+        findings: corner.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
+        notes: corner.notes,
       },
       outbound: {
         manifest: outboundPath,
