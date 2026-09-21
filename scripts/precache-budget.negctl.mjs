@@ -47,6 +47,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, cpSync, existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { shellCacheState, writeShellCacheToken } from './shell-cache.mjs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -154,6 +155,15 @@ function staticFindings() {
 function runCase(c) {
   reset();
   c.apply(TMP_SITE);
+  // Keep the mutant self-consistent before measuring. Every case here changes a
+  // file the worker's routes can store, so the shell-cache token (check 13) would
+  // go stale and precache-weight -- which now also requires the cache the browser
+  // opened to be the name this tree derives -- would fail on THAT, and the budget
+  // would stop being what this file tests. Re-deriving leaves the budget as the
+  // only live property, and check 13 has its own mutation driver.
+  const derived = shellCacheState(TMP_SITE);
+  if (derived.declared !== derived.token) writeShellCacheToken(TMP_SITE, derived.token);
+
   const rec = { id: c.id, why: c.why };
   let bad = false;
 

@@ -97,6 +97,16 @@ jobs:
       # say so. site/ is a committed build product, so a rebuild restores both.
       - name: Prove the install-budget check is not vacuous (mutation test)
         run: node scripts/precache-budget.negctl.mjs --static-only
+      # The constant sw.js opens its cache under is injected by upstream's build
+      # from a digest of the emitted asset graph, and that injection is the only
+      # mechanism that retires a stale shell. This repository hand-patches the
+      # artifact while keeping every filename, so nothing derives the constant
+      # any more: site/ and sw.js could disagree and no step here would notice,
+      # leaving every returning client on the copy it already has. Check 13
+      # derives the token from the tree; this step breaks the agreement nine
+      # ways and requires the guard to name each one.
+      - name: Prove the shell-cache token check is not vacuous (mutation test)
+        run: node scripts/shell-cache.negctl.mjs --static-only
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -209,5 +219,18 @@ jobs:
       # control. Each must turn the check red for its own reason.
       - name: Prove the example-outcome check is not vacuous (mutation test)
         run: node scripts/example-outcomes.negctl.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # And the runtime half of check 13. The static check proves the declared
+      # constant describes the tree; only a browser can show that the cache the
+      # worker actually opened is the one the tree derives. The two cases at the
+      # ends pin down that neither channel contains the other: a narrowed
+      # activate() prefix is visible to the static channel ALONE (that case
+      # requires this channel to stay green), and install() opening a cache
+      # outside the prefix leaves the static guard completely green -- the
+      # constant and both declarations are untouched -- so only this channel can
+      # report it.
+      - name: Prove the shell-cache token check is not vacuous (mutation test)
+        run: node scripts/shell-cache.negctl.mjs --require
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}

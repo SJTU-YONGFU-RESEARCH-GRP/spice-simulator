@@ -12,7 +12,22 @@
 // activate() drops every "icm-static-shell-*" cache but this one, and the
 // runtime fetches were written into this same bucket. App-*.js is only ever
 // reached through that second route, not through shellUrls().
-// Value: first 12 hex digits of the most recently patched asset's SHA-256.
+// Value: DERIVED, not chosen. It is the first 12 hex digits of a SHA-256 over
+// (a) the bytes of every file these routes could STORE -- the shellUrls() members,
+// every extension a resource tag can request, and everything under
+// ENGINE_PAYLOAD_DIRS -- and (b) those two declarations themselves, because they
+// decide which of those URLs are stored. Neither the constant nor these comments
+// is an input, so the value is stable until the artifact or those declarations
+// move. A file this worker can never be asked for (a licence text, a release
+// manifest) is deliberately not hashed: it cannot go stale in anyone's cache.
+// Do not edit it by hand. Run `node scripts/shell-cache.mjs --write`, which
+// derives it; check 13 of scripts/check-artifacts.mjs fails the build when the
+// declared token stops describing this tree. Until 2026-09-21 the value was
+// picked by hand and nothing verified it, so a hand-patch could ship beside a
+// stale constant and never reach a returning client at all.
+// The entries below are the record of which change forced each bump; the ones
+// before 2026-09-21 predate the derivation and name the asset they were taken
+// from. Each of them is still the reason that bump was needed.
 //   c639654867ce  <- assets/src-CMkpkg0p.js          (base-relative asset paths)
 //   06929bd5df04  <- assets/jsx-dev-runtime-DuB4xY43.js  (ref semantics)
 //   c676f34651bc  <- assets/App-D0jgYDVz.js          (unlock gate on ?example=)
@@ -78,7 +93,14 @@
 // This bump is not optional even though no asset filename changed: a returning
 // client would otherwise keep serving the 558x558 logo out of its existing
 // cache. Reproduce with: sha256sum site/logo.png | cut -c1-12
-const CACHE = "icm-static-shell-4acc26b4ae25";
+//   2026-09-21, derived token (scripts/shell-cache.mjs, check 13):
+//     0e52479ced0d <- not a file: the token became a digest of the bytes these
+//                     routes can store, plus the two declarations below that
+//                     decide which of them they do. Before this, the value was
+//                     the most recently patched asset's digest, chosen by hand,
+//                     and nothing could see whether it still described what this
+//                     worker serves. Reproduce with: node scripts/shell-cache.mjs
+const CACHE = "icm-static-shell-0e52479ced0d";
 
 function scopeUrl() {
   return new URL(self.registration.scope);

@@ -34,6 +34,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SHELL_CACHE_PREFIX, shellCacheState } from './shell-cache.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..');
@@ -235,9 +236,26 @@ try {
   result.allKeys = measured.allKeys;
   result.targets = measured.targets;
 
+  // The runtime half of check 13. The static check proves the declared constant
+  // describes this tree; this proves the cache the browser ACTUALLY opened is
+  // that same one. Neither implies the other: a tree whose sw.js declared a
+  // stale token would still have the browser open it faithfully, and a worker
+  // that opened some other cache would satisfy every string test while serving
+  // entries the guard never inspected.
+  const derivedShell = shellCacheState(SITE);
+  result.derivedCacheName = SHELL_CACHE_PREFIX + derivedShell.token;
+  result.declaredCacheName = derivedShell.declared === null
+    ? null
+    : SHELL_CACHE_PREFIX + derivedShell.declared;
+
   let total = 0;
   let bad = 0;
   const problems = [];
+  if (measured.shellName !== result.derivedCacheName) {
+    bad++;
+    problems.push('the browser opened cache "' + measured.shellName + '", but this tree derives "' +
+      result.derivedCacheName + '" (declared ' + (result.declaredCacheName ?? '(none)') + ')');
+  }
   if (!result.registered) {
     // install() aborted, so the shell cache is either absent or empty. Say so
     // first: it is the reason everything below will be missing.
@@ -246,7 +264,10 @@ try {
     console.log('precache-weight: the worker never reached the active state -- install() aborted');
     console.log('   (cache.addAll() is atomic, so one target that fails to fetch leaves the shell uninstalled)');
   }
-  console.log('precache-weight: cache "' + measured.shellName + '" holds ' + measured.entries + ' entry(ies)');
+  console.log('precache-weight: cache "' + measured.shellName + '" holds ' + measured.entries + ' entry(ies)' +
+    (measured.shellName === result.derivedCacheName
+      ? '  (matches scripts/shell-cache.mjs)'
+      : '  <- NOT the derived name ' + result.derivedCacheName));
   console.log('');
   console.log('   stored B    disk B  target');
   for (const t of measured.targets) {

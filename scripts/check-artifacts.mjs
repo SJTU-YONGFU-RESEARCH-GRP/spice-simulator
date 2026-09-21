@@ -65,7 +65,22 @@
  *                   only check that constrains what the page may load at all --
  *                   without it the shell names no origin and any injected script
  *                   runs with the editor's own authority. See checkShellCsp.
- *  12. (meta)       Accepted deviations that matched nothing. Printed only when
+ *  12. swCache     The service worker's runtime cache must be able to store.
+ *                   cache.put() has to receive a response cloned before
+ *                   respondWith() took the body, and the engine payload --
+ *                   which arrives by fetch(), with an empty request.destination
+ *                   -- has to be routed by path rather than precached. Without
+ *                   this the worker stores nothing and "offline simulation"
+ *                   silently means "the browser's HTTP cache happened to have a
+ *                   copy". See checkServiceWorkerCache.
+ *  13. shellCache  The constant the worker opens its cache under must describe
+ *                   THIS tree. Upstream's build derives it from the emitted
+ *                   asset graph; in a committed artifact whose repairs keep
+ *                   their filenames, nothing derives it, and the static route
+ *                   is cache-first without revalidation -- so a stale constant
+ *                   hides every hand-patch from every returning client for
+ *                   good. Derived, not chosen: see scripts/shell-cache.mjs.
+ *  14. (meta)       Accepted deviations that matched nothing. Printed only when
  *                   there are any, and never silenceable.
  *
  * The rule in (1) is deliberately narrow: a reference is reported only when
@@ -110,6 +125,9 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
+// The derivation lives in one place so that the writer and the guard cannot
+// disagree about what the token should be.
+import { SHELL_CACHE_PREFIX, shellCacheState } from './shell-cache.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..');
@@ -1639,6 +1657,7 @@ async function main() {
   const storage = checkStorageAccess(site);
   const csp = checkShellCsp(site, cspPath, outboundPath);
   const swcache = checkServiceWorkerCache(site);
+  const shellCache = shellCacheState(site);
   const jsxFactoryList = jsxFactory
     .filter((r) => r.failures.length > 0)
     .map((r) => ({
@@ -1658,7 +1677,7 @@ async function main() {
   const lists = [
     escapedList, missingList, externalList, jsxList, shellList, jsxFactoryList,
     jsxSites.findings, egress.findings, storage.findings, csp.findings,
-    swcache.findings,
+    swcache.findings, shellCache.findings,
   ];
   for (const list of lists) {
     for (const f of list) {
@@ -1811,9 +1830,28 @@ async function main() {
       'the worker caches nothing, so offline simulation depends on the browser HTTP cache', accepted));
   }
 
+  push('');
+  push('13. shell cache invalidation token');
+  push('   (the constant sw.js opens its cache under must describe THIS tree: upstream\'s build ' +
+    'derives it from the emitted asset graph, a committed artifact whose repairs keep their ' +
+    'filenames has nothing left to derive it from, and the static route is cache-first with no ' +
+    'revalidation -- so a stale constant hides every hand-patch from every returning client)');
+  if (shellCache.status !== 'checked') {
+    push('  --  ' + shellCache.notes.join('; '));
+  } else if (shellCache.findings.length === 0) {
+    push('  ok  ' + SHELL_CACHE_PREFIX + shellCache.token + ' covers ' + shellCache.files +
+      ' file(s) / ' + kib(shellCache.bytes) + ' KiB, ' + shellCache.precache.length +
+      ' precache item(s), ' + shellCache.payloadDirs.length + ' payload dir(s)');
+    for (const n of shellCache.notes.slice(1)) push('      ' + n);
+  } else {
+    push(...render(shellCache.findings, 'shell cache findings',
+      'a returning client keeps the copy it already has, so the repair never reaches it', accepted));
+    for (const n of shellCache.notes.slice(0, 2)) push('      ' + n);
+  }
+
   if (stale.length > 0) {
     push('');
-    push('13. stale accepted deviations');
+    push('14. stale accepted deviations');
     push(...render(stale, 'accepted entries that matched nothing', null, () => false));
   }
 
@@ -1863,6 +1901,20 @@ async function main() {
         dirs: swcache.dirs,
         findings: swcache.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
         notes: swcache.notes,
+      },
+      shellCache: {
+        status: shellCache.status,
+        token: shellCache.token ?? null,
+        declared: shellCache.declared ?? null,
+        activatePrefix: shellCache.activatePrefix ?? null,
+        treeDigest: shellCache.treeDigest ?? null,
+        declDigest: shellCache.declDigest ?? null,
+        files: shellCache.files ?? 0,
+        bytes: shellCache.bytes ?? 0,
+        precache: shellCache.precache ?? [],
+        payloadDirs: shellCache.payloadDirs ?? [],
+        findings: shellCache.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
+        notes: shellCache.notes,
       },
       outbound: {
         manifest: outboundPath,
