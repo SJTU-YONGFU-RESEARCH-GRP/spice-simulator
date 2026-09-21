@@ -104,6 +104,19 @@ check 14 (above) ties the advertised list to the emitter and the library, and
 `numeric-crosscheck.mjs` runs the three corners plus the frozen device set in
 the shipped engine.
 
+Two more libraries ship in `site/models/` — `cap.lib` (role capacitors: `cout`,
+compensation, bypass, MIM/MOM tags) and `opamp.lib` (behavioural `opamp_se` /
+`opamp_diff` with `av0`/`gbw`/`rin`/`rout`/`vos`/`acm`/`swing`). Their headers
+tell a netlist to include them, and `numeric-crosscheck.mjs` now **runs** them,
+because nothing ever had: the results are correct to the closed forms. What the
+app cannot do is **reach** them — the simulator's filesystem is populated from a
+single hardcoded library path, and the one code path that runs a user's own deck
+verbatim (`mode: 'raw'`) is not constructible from this deploy, which builds
+every simulation setup as `structured` and imports SPICE into a project rather
+than into a deck. So the two libraries are source material for a netlist you
+import yourself, not a library the app offers. Do not read the green as "the
+feature works"; see `analysis/SPICE-Simulator-创新性产品改进评估-C2-2026-09-22.md`.
+
 `npm run preview` serves with `Cache-Control: no-store`, which is what you want
 while editing the artifact but which also stops the service worker from caching
 anything — so a preview cannot tell you whether the worker works. Pass
@@ -114,8 +127,8 @@ anything — so a preview cannot tell you whether the worker works. Pass
 | `check-artifacts.mjs` | Is the bundle self-consistent — do its references resolve, is there no development JSX runtime or folded-`undefined` call site, is every network target in the tree classified, is every storage read inside a `try`/`catch`, does the shell still carry its Content-Security-Policy, does `sw.js` still have the shape its caching needs, does the worker's atomic install payload fit its budget, does the constant it opens its cache under still describe this tree, and does the corner set the panel offers match the model library that has to answer it? |
 | `smoke-test.mjs` | Does the editor actually run — does a real simulation finish with zero uncaught errors? |
 | `storage-resilience.mjs` | Does the editor still render in a browser that **denies** storage? Loads the home page and an `?example=` deep link with `localStorage`/`sessionStorage` replaced by throwing getters — the failure mode of Safari private mode, blocked site data and partitioned iframes — and requires the editor, not the crash screen. |
-| `numeric-crosscheck.mjs` | Are the numbers **right** — does the shipped WASM agree with first-principles closed forms and with model-independent invariants (including for BSIM3/BSIM4, which have no closed form)? |
-| `numeric-crosscheck.negctl.mjs` | Would the numeric guard **notice** if it broke? Mutates the guard and the deck and requires every mutant to fail. |
+| `numeric-crosscheck.mjs` | Are the numbers **right** — does the shipped WASM agree with first-principles closed forms and with model-independent invariants (including for BSIM3/BSIM4, which have no closed form)? It also runs the two **role libraries** the deploy ships (`cap.lib`, `opamp.lib`): an ideal capacitor must be an open circuit at dc and charge with `tau = R*C`, and `opamp_se` must follow its soft-rail tanh transfer behind the series `Rout`. |
+| `numeric-crosscheck.negctl.mjs` | Would the numeric guard **notice** if it broke? Mutates the guard and the deck, and (for the corner and role-library groups) the **artifact's own library files**, and requires every mutant to fail — while the mutant that makes the corner selector inert must leave "the default still matches the frozen device set" green, so the two cross-checks are shown to be independent rather than two names for one claim. |
 | `egress-integrity.mjs` | Does the third-party engine fallback actually **verify** what it downloads? Lifts the loader and hash helper out of the shipped chunk and runs them, including a tampered payload that must be refused *and never executed*. |
 | `outbound-repair.negctl.mjs` | Would the outbound checks **notice** if they broke? Nine cases, incl. two controls, against deliberately weakened copies. |
 | `csp-conformance.mjs` | Is the shell's Content-Security-Policy **enforced** and does it leave the editor working? Boots the page, opens an example and runs a simulation under the shipped policy, requiring zero violations — after first proving the violation collector can see one (`--self-test` serves a deliberately violating page and requires both the violation to be observed and the injected code never to run). |

@@ -11,14 +11,22 @@
  * numeric cross-check so the property is reproducible instead of an anecdote in
  * a commit message: it runs on demand and in CI right after the guard itself.
  *
- * It writes three mutants and requires ALL of them to go red:
+ * It writes five mutants and requires ALL of them to go red:
  *
- *   cf_oracle  breaks the closed-form expectation     -> dc_divider must fail
- *   inv_limit  feeds the invariant layer a wrong load  -> all three MOS sweeps
- *              resistor                                  must fail
- *   model_n    changes the DECK (diode ideality n=1->2) while the oracle keeps
- *              n=1 -- i.e. simulates a silently changed device model, which is
- *              exactly the upstream-rebuild regression the guard exists for
+ *   cf_oracle       breaks the closed-form expectation      -> dc_divider must fail
+ *   inv_limit       feeds the invariant layer a wrong load   -> all three MOS sweeps
+ *                   resistor                                   must fail
+ *   model_n         changes the DECK (diode ideality n=1->2) while the oracle keeps
+ *                   n=1 -- i.e. simulates a silently changed device model, which is
+ *                   exactly the upstream-rebuild regression the guard exists for
+ *   corner_inert    edits the ARTIFACT's cmos.lib so the library stops answering the
+ *                   corner selector: the three corners become identical, which must
+ *                   fail the ORDERING cross-check and leave the "default still
+ *                   matches the frozen device set" one green
+ *   lib_role_broken edits the ARTIFACT's cap.lib so the role subcircuits are
+ *                   resistors: the dc-block claim and the charge curve must both go
+ *                   red, or the role-library cases would only be testing that a
+ *                   file exists
  *
  * The mutants are copies of the guard with its paths rewritten to the real
  * repo and to a temp directory, so the real guard and its result file are never
@@ -89,6 +97,22 @@ const MUTATIONS = [
     expectCases: ['corner_shifts_every_device'],
     expectPass: ['corner_default_matches_frozen'],
   },
+  {
+    // The other direction, and the reason the role-library cases are worth
+    // having: cap.lib ships and nothing has ever run it. Replacing the capacitor
+    // inside all five role subcircuits with a resistor must take the dc-block
+    // claim down (the output parks at the 10k/10k midpoint, and the loop draws
+    // current) and take the charge curve down with it (an "RC" with no C settles
+    // instantly). If both stayed green, the guard would only be checking that a
+    // file exists.
+    id: 'lib_role_broken',
+    what: 'artifact: cap.lib role subcircuits are resistors, not capacitors',
+    artifact: 'site/models/cap.lib',
+    artifactFrom: 'C1 p n {c}',
+    artifactTo: 'R1 p n {c}',
+    count: 5,
+    expectCases: ['cap_lib_dc_block', 'cap_lib_tau'],
+  },
 ];
 
 const src = readFileSync(SRC, 'utf8');
@@ -102,10 +126,14 @@ function rehome(text, id, extra) {
       JSON.stringify(join(suite, `result-${id}.json`)));
   // A mutant that breaks the ARTIFACT points the mutant guard at a mutated copy
   // of the artifact's own file, so what gets exercised is the bytes under test
-  // rather than the guard's idea of them.
-  if (extra && extra.cornerLib) {
-    out = out.replace("join(REPO_ROOT, 'site', 'models', 'cmos.lib')",
-      JSON.stringify(extra.cornerLib));
+  // rather than the guard's idea of them. Any library can be redirected this way;
+  // which one is decided by the artifact path the mutation names.
+  if (extra && extra.libs) {
+    for (const [base, dst] of Object.entries(extra.libs)) {
+      out = out.replace(
+        "join(REPO_ROOT, 'site', 'models', '" + base + "')",
+        JSON.stringify(dst));
+    }
   }
   return out;
 }
@@ -140,7 +168,7 @@ try {
       }
       const dst = join(suite, `artifact-${m.id}-${m.artifact.split('/').pop()}`);
       writeFileSync(dst, orig.split(m.artifactFrom).join(m.artifactTo), 'utf8');
-      extra = { cornerLib: dst };
+      extra = { libs: { [m.artifact.split('/').pop()]: dst } };
     }
 
     const path = join(suite, `mutant-${m.id}.mjs`);

@@ -359,6 +359,114 @@ function cornerCases() {
   ];
 }
 
+// --------------------------------------------------------------------------
+// The other two shipped libraries. site/models/ carries three: cmos.lib is the
+// profile's modelLibrary and therefore on the run path, while cap.lib and
+// opamp.lib document themselves as `.include`-able role libraries (the headers
+// say "Shared by netlists via: .include ...") and no code path in the artifact
+// has ever executed them -- so nothing has ever said whether they are correct.
+// These cases run them in the shipped engine and compare against closed forms:
+// an ideal capacitor is an open circuit at dc and an exponential charge curve in
+// time, and opamp_se is a soft-rail tanh amplifier behind a series Rout.
+//
+// What these cases do NOT show is that the product can reach them: the run's
+// filesystem is populated from a single hardcoded library path, so nothing in
+// the shipped app can include a deck of its own. That is a separate question,
+// recorded in the C2 note, and these cases exist to answer the one that comes
+// first -- if the libraries are wrong, making them reachable would ship a defect.
+//
+// The library text is read from the tree, because the library is what is under
+// test; the deck includes it at the path the harness writes it to, so no copy is
+// transcribed here.
+// --------------------------------------------------------------------------
+const CAP_LIB_PATH = '/models/cap.lib';
+const OPAMP_LIB_PATH = '/models/opamp.lib';
+const CAP_LIB_FILE = join(REPO_ROOT, 'site', 'models', 'cap.lib');
+const OPAMP_LIB_FILE = join(REPO_ROOT, 'site', 'models', 'opamp.lib');
+
+/** opamp_se's internal pole resistor. Declared in the library, not overridable. */
+const OPAMP_RPOLE = 1e3;
+
+function readIfPresent(path) {
+  try { return readFileSync(path, 'utf8'); } catch { return null; }
+}
+
+function teachingLibCases() {
+  const cap = readIfPresent(CAP_LIB_FILE);
+  const op = readIfPresent(OPAMP_LIB_FILE);
+  const capFiles = cap === null ? {} : { [CAP_LIB_PATH]: cap };
+  const opFiles = op === null ? {} : { [OPAMP_LIB_PATH]: op };
+
+  return [
+    {
+      name: 'cap_lib_dc_block',
+      what: 'cap_out role subcircuit: an ideal capacitor is an open circuit at dc',
+      rtol: 1e-9,
+      files: capFiles,
+      deck: [
+        '* the role cap blocks dc: no drop across it, and no current in the loop',
+        '.include "' + CAP_LIB_PATH + '"',
+        'V1 in 0 1',
+        'R1 in out 10k',
+        'X1 out mid cap_out',
+        'R2 mid 0 10k',
+        '.op',
+        '.end',
+      ].join('\n') + '\n',
+      // Two claims. v(out) sits at the source because an open circuit drops no
+      // voltage -- a role subcircuit emitted as a resistor instead would park it
+      // at the 10k/10k midpoint. i(v1) is zero for the same reason, and a
+      // resistive part would draw the full 50 uA.
+      checks: [
+        { v: 'v(out)', expect: () => 1 },
+        { v: 'i(v1)', expect: () => 0 },
+      ],
+    },
+    {
+      name: 'cap_lib_tau',
+      what: 'cap_out role subcircuit: the charge curve is a capacitor of the declared size',
+      rtol: 3e-3,
+      files: capFiles,
+      deck: [
+        '* tau must be R*C with C the role subcircuit\'s own default (200p)',
+        '.include "' + CAP_LIB_PATH + '"',
+        'V1 in 0 pulse(0 1 0 1n 1n 100 200)',
+        'R1 in out 10k',
+        'X1 out 0 cap_out',
+        '.tran 1u 20u',
+        '.end',
+      ].join('\n') + '\n',
+      pick: { axis: 'time', target: 4e-6 },
+      checks: [{ v: 'v(out)', expect: (t) => 1 - Math.exp(-t / (10e3 * 200e-12)) }],
+    },
+    {
+      name: 'opamp_lib_transfer',
+      what: 'opamp_se role subcircuit: soft-rail tanh transfer behind a series Rout',
+      rtol: 1e-6,
+      files: opFiles,
+      deck: [
+        '* opamp_se with its parameters pinned, so the closed form is the model',
+        '.include "' + OPAMP_LIB_PATH + '"',
+        'Vdd vdd 0 1.8',
+        'Vinp inp 0 1.001',
+        'Vinm inm 0 1',
+        'X1 inp inm out vdd 0 opamp_se av0=1000 rin=1T rout=1k vos=0 acm=0 swing=1',
+        'Rl out 0 1meg',
+        '.op',
+        '.end',
+      ].join('\n') + '\n',
+      checks: [{
+        v: 'v(out)',
+        // Bclip drives `outi` to mid + swing*tanh(av0*Vd/(swing+1p)); at dc the
+        // pole capacitor is open, so the output is that value through the series
+        // chain rpole (library) + rout (this deck) + Rl.
+        expect: () => (0.5 * (1.8 + 0) + 1 * Math.tanh((1000 * 1e-3) / (1 + 1e-12))) *
+          (1e6 / (OPAMP_RPOLE + 1e3 + 1e6)),
+      }],
+    },
+  ];
+}
+
 /** First value of a name in an op rawfile, or null. */
 function opValue(parsed, name) {
   const j = parsed.variables.findIndex((v) => v.name.toLowerCase() === name.toLowerCase());
@@ -695,6 +803,7 @@ const CASES = [
     ],
   },
   ...cornerCases(),
+  ...teachingLibCases(),
 ];
 
 // --------------------------------------------------------------------------
