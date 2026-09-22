@@ -213,9 +213,9 @@ the one code path that runs a user's own deck verbatim (`mode: 'raw'`) is not
 constructible from this deploy — every setup is built as `structured`, and
 imported SPICE becomes a project rather than a deck. Background and the paths
 that were ruled out are in
-`analysis/SPICE-Simulator-创新性产品改进评估-C2-2026-09-22.md`; the change itself,
+`analysis/60_improvements/SPICE-Simulator-创新性产品改进评估-C2-2026-09-22.md`; the change itself,
 with the measured before/after matrix and both mutants, is in
-`analysis/SPICE-Simulator-创新性产品改进-C2b-导入可达性-2026-09-22.md`. It is labelled
+`analysis/60_improvements/SPICE-Simulator-创新性产品改进-C2b-导入可达性-2026-09-22.md`. It is labelled
 C2b, not C3, because it is the **reachable half of C2** (the feasibility list's C2 is
 "make `cap.lib`/`opamp.lib` reachable") rather than the next item on that list — whose
 C3 is the unrelated service-worker Gallery shim.
