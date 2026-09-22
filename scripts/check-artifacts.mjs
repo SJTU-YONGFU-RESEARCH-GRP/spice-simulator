@@ -182,7 +182,7 @@ const kib = (bytes) => (bytes / 1024).toFixed(1);
 function parseArgs(argv) {
   const out = {
     site: join(REPO_ROOT, 'site'), base: null, strict: false, json: null, accept: null,
-    outbound: null, csp: null, precache: null, corner: null, import: null,
+    outbound: null, csp: null, precache: null, corner: null, import: null, gallery: null,
   };
   for (const arg of argv) {
     // An empty value would silently resolve to the current directory and scan
@@ -197,6 +197,7 @@ function parseArgs(argv) {
     else if (arg.startsWith('--precache=')) out.precache = resolve(REPO_ROOT, arg.slice('--precache='.length));
     else if (arg.startsWith('--corner=')) out.corner = resolve(REPO_ROOT, arg.slice('--corner='.length));
     else if (arg.startsWith('--import=')) out.import = resolve(REPO_ROOT, arg.slice('--import='.length));
+    else if (arg.startsWith('--gallery=')) out.gallery = resolve(REPO_ROOT, arg.slice('--gallery='.length));
     else if (arg.startsWith('--json=')) out.json = arg.slice('--json='.length);
     else return { error: 'unknown argument: ' + arg };
   }
@@ -1943,6 +1944,259 @@ function checkImportLibs(site, manifestPath) {
   return out;
 }
 
+/**
+ * 16. static gallery shim.
+ *
+ * The Gallery panel reads four origin-root endpoints and only a server can
+ * answer them, so on a static deploy its fetches fail, the client degrades to
+ * null and the gallery section never renders. scripts/gallery-shim.json routes
+ * those four to files committed under <scope>gallery/, which makes the panel
+ * usable read-only.
+ *
+ * This is the half a browser cannot see. scripts/gallery-shim.mjs drives the
+ * panel and reports what the product does; a browser run cannot tell a route
+ * that is wired from one that is merely defined, cannot see whether the id used
+ * as a path segment was shape-checked before it was joined to a path, and
+ * cannot see whether the shim quietly became a cache. Each of those is asserted
+ * here, and the last shape assertion tracks the shipped client so the manifest
+ * cannot drift away from the keys the panel actually reads.
+ */
+function checkGalleryShim(site, manifestPath) {
+  const out = { status: 'checked', routes: [], findings: [], notes: [] };
+  if (!manifestPath) {
+    out.status = 'absent';
+    out.notes.push('no gallery manifest (pass --gallery=<file> to enable this check)');
+    return out;
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  } catch (e) {
+    out.status = 'vacuous';
+    out.findings.push({
+      key: 'gallery-shim-manifest-unreadable', ref: String(manifestPath),
+      notes: ['cannot read the gallery manifest (' + e.message + '), so nothing here would be verified'],
+    });
+    return out;
+  }
+  const contract = manifest.contract ?? {};
+  const repairs = manifest.repairs ?? [];
+  if (!contract.file || !contract.apiPrefix || !contract.idPattern || !contract.markers || !repairs.length) {
+    // A manifest that names no contract would let every rule below pass while
+    // verifying nothing -- the same trap check 14 calls a vacuous contract. It
+    // is reported as a finding rather than a note so it cannot be mistaken for
+    // "this tree has nothing to check".
+    out.status = 'vacuous';
+    out.findings.push({
+      key: 'gallery-shim-contract-vacuous', ref: String(manifestPath),
+      notes: ['the gallery manifest declares no usable contract (file/apiPrefix/idPattern/markers/repairs), so nothing here would be verified'],
+    });
+    return out;
+  }
+  const swPath = join(site, String(contract.file).split('/').join('\\'));
+  if (!existsSync(swPath)) {
+    out.status = 'absent';
+    out.notes.push('no ' + contract.file + ' in this tree');
+    return out;
+  }
+
+  // Applicability, by the same rule as check 15: gate on whether this tree
+  // declares the FEATURE, not on whether a file this check likes is missing.
+  // The gallery client chunk is the panel that needs a server; a tree without
+  // it has no gallery for a route to serve, and a tree with it and no route is
+  // exactly the defect this check exists to report.
+  const assetsDir = join(site, 'assets');
+  const chunkNames = existsSync(assetsDir) ? readdirSync(assetsDir) : [];
+  const clientName = chunkNames.find((f) => /^gallery-client-.*\.js$/.test(f));
+  if (!clientName) {
+    out.status = 'absent';
+    out.notes.push('this tree carries no gallery client chunk, so it has no gallery for a route to serve');
+    return out;
+  }
+  const sw = readFileSync(swPath, 'utf8');
+  const client = readFileSync(join(assetsDir, clientName), 'utf8');
+  const appText = chunkNames
+    .filter((f) => /^App-.*\.js$/.test(f))
+    .map((f) => readFileSync(join(assetsDir, f), 'utf8'))
+    .join('');
+  const ref = String(contract.file);
+  const count = (text, needle) => {
+    let n = 0;
+    let at = 0;
+    for (;;) {
+      const i = text.indexOf(needle, at);
+      if (i === -1) return n;
+      n += 1;
+      at = i + needle.length;
+    }
+  };
+
+  out.routes = Array.isArray(contract.routes) ? contract.routes : [];
+  out.assetRoot = String(contract.assetRoot ?? '');
+  out.apiPrefix = String(contract.apiPrefix);
+
+  // --- 1. both insertions are in place --------------------------------------
+  for (const [name, marker] of Object.entries(contract.markers)) {
+    const n = count(sw, String(marker));
+    if (n !== 1) {
+      out.findings.push({
+        key: 'gallery-shim-marker:' + name, ref,
+        notes: ['marker ' + JSON.stringify(marker) + ' occurs ' + n + ' time(s); expected exactly 1',
+          'without it the endpoint this repair answers stays a 404 and the panel stays dark'],
+      });
+    }
+  }
+
+  // --- 2. the route is WIRED, not merely defined -----------------------------
+  //
+  // The same failure shape check 15 was written for: an injected definition that
+  // nothing calls. Here it has a second form. The fetch listener returns early
+  // for every /api/ path on purpose (that branch leaves a revisioned API to its
+  // own HTTP policy), so a dispatch placed AFTER it is dead code that every
+  // string test would still find.
+  const dispatch = 'if (isGalleryApi(event.request)) {';
+  const apiReturn = 'if (isSameOriginApi(event.request)) return;';
+  const iDispatch = sw.indexOf(dispatch);
+  const iApiReturn = sw.indexOf(apiReturn);
+  if (iDispatch === -1) {
+    out.findings.push({
+      key: 'gallery-shim-not-routed', ref,
+      notes: ['the handlers are present but nothing dispatches to them, so the four endpoints are still unrouted'],
+    });
+  } else {
+    if (!sw.includes('event.respondWith(galleryApiResponse(event.request))')) {
+      out.findings.push({
+        key: 'gallery-shim-not-answering', ref,
+        notes: ['the dispatch does not respondWith(galleryApiResponse(...)); the worker saw the request and declined to answer it'],
+      });
+    }
+    if (count(sw, 'function galleryApiResponse(') !== 1) {
+      out.findings.push({
+        key: 'gallery-shim-handler-missing', ref,
+        notes: ['galleryApiResponse is dispatched but not defined exactly once'],
+      });
+    }
+    if (iApiReturn !== -1 && iDispatch > iApiReturn) {
+      out.findings.push({
+        key: 'gallery-shim-route-after-api-return', ref,
+        notes: ['the gallery dispatch sits after the isSameOriginApi early return, which returns for every /api/ path',
+          'the route is then unreachable while its text is all present -- this is the defect a string test cannot see'],
+      });
+    }
+  }
+
+  // --- 3. the id is shape-checked before it becomes a path segment ----------
+  //
+  // An entry id arrives from a network response and is joined into a same-origin
+  // URL. Without the guard, an id of `../../etc` climbs out of gallery/.
+  if (!sw.includes('/' + contract.idPattern + '/i')) {
+    out.findings.push({
+      key: 'gallery-shim-id-guard-drift', ref,
+      notes: ['the declared id pattern ' + JSON.stringify(contract.idPattern) + ' is not the one in the artifact',
+        'the manifest and the tree must agree on the shape that keeps an id from being a path'],
+    });
+  }
+  if (count(sw, 'GALLERY_ID.test(') < 2) {
+    out.findings.push({
+      key: 'gallery-shim-id-unguarded', ref,
+      notes: ['the id pattern is tested fewer than twice; both the index entries AND the path parameter must be checked'],
+    });
+  }
+  for (const segment of ['"gallery/" + id + "/preview.svg"', '"gallery/" + id + "/project.json"']) {
+    if (!sw.includes(segment)) {
+      out.findings.push({
+        key: 'gallery-shim-asset-path', ref,
+        notes: ['cannot find ' + segment + '; if the asset path changed, the guard assertions above no longer cover what is joined'],
+      });
+    }
+  }
+
+  // --- 4. it ANSWERS; it does not cache -------------------------------------
+  //
+  // The branch it sits in front of exists so that revisioned preview URLs are
+  // never served stale out of the build-scoped shell cache. A shim that stored
+  // them would defeat exactly that -- and from the outside it would look right
+  // until a revision changed.
+  const iHelpers = sw.indexOf(String(contract.markers.helpers ?? ''));
+  const iListener = sw.indexOf('self.addEventListener("fetch"');
+  if (iHelpers !== -1 && iListener !== -1 && iHelpers < iListener) {
+    const region = sw.slice(iHelpers, iListener);
+    if (/caches\./.test(region) || /cache\.put\(/.test(region)) {
+      out.findings.push({
+        key: 'gallery-shim-caches', ref,
+        notes: ['the shim region touches Cache Storage, but it sits in front of the branch that keeps /api/* out of the shell cache',
+          'storing a revisioned preview would serve the old image under the new name'],
+      });
+    }
+  }
+
+  // --- 5. the JSON still carries the keys the shipped client reads ----------
+  //
+  // The key must be WRITTEN where a response is built, not merely present
+  // somewhere in the region. `entries:` renamed to `items:` leaves the identifier
+  // `entries` all over the index reader, so a substring test over a 5 KB region
+  // stays green while the client reads an empty list -- the same shape of
+  // vacuity this check exists to catch, one level down. So the object literals
+  // passed to galleryJson() are collected and each declared key has to be a
+  // property name in one of them.
+  const declared = new Set([
+    ...(contract.listShape ?? []),
+    ...(contract.tagsShape ?? []),
+    ...(contract.detailShape ?? []),
+  ]);
+  const shimRegion = iHelpers !== -1 && iListener !== -1 && iHelpers < iListener
+    ? sw.slice(iHelpers, iListener)
+    : sw;
+  const emitted = [];
+  for (let at = 0; ;) {
+    const i = shimRegion.indexOf('galleryJson({', at);
+    if (i === -1) break;
+    const open = i + 'galleryJson('.length;
+    let depth = 0;
+    let end = -1;
+    for (let j = open; j < shimRegion.length; j++) {
+      if (shimRegion[j] === '{') depth++;
+      else if (shimRegion[j] === '}') { depth--; if (depth === 0) { end = j; break; } }
+    }
+    if (end === -1) { emitted.push(null); break; }
+    emitted.push(shimRegion.slice(open, end + 1));
+    at = end + 1;
+  }
+  const isPropertyName = (key) => {
+    const re = new RegExp('(^|[{,\\s])' + key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*[:,}]');
+    return emitted.some((literal) => literal !== null && re.test(literal));
+  };
+  for (const key of declared) {
+    if (!isPropertyName(key)) {
+      out.findings.push({
+        key: 'gallery-shim-shape-missing:' + key, ref,
+        notes: ['the manifest declares ' + JSON.stringify(key) + ' in the response, but no object literal passed to galleryJson() writes it',
+          'the client reads this key, so a response without it is a response the panel cannot use',
+          emitted.length ? 'galleryJson() literals found: ' + emitted.length : 'no galleryJson() literal found in the shim region at all'],
+      });
+    }
+  }
+  const reads = [];
+  if (client.includes('entries??[]')) reads.push({ key: 'entries', where: clientName });
+  if (client.includes('nextCursor')) reads.push({ key: 'nextCursor', where: clientName });
+  if (client.includes('.total')) reads.push({ key: 'total', where: clientName });
+  if (client.includes('.tags??[]')) reads.push({ key: 'tags', where: clientName });
+  if (appText.includes('projectText')) reads.push({ key: 'projectText', where: 'the App chunk' });
+  if (client.includes('preview.svg')) reads.push({ key: 'preview.svg', where: clientName });
+  for (const r of reads) {
+    const ok = r.key === 'preview.svg' ? shimRegion.includes('preview.svg') : declared.has(r.key);
+    if (!ok) {
+      out.findings.push({
+        key: 'gallery-shim-contract-drift:' + r.key, ref,
+        notes: [r.where + ' reads ' + JSON.stringify(r.key) + ' from these endpoints, but the manifest does not declare it',
+          'the client moved; re-derive the manifest contract from the new chunk rather than from this file'],
+      });
+    }
+  }
+
+  return out;
+}
+
 function checkServiceWorkerCache(site) {
   const swPath = join(site, 'sw.js');
   if (!existsSync(swPath)) {
@@ -2168,6 +2422,9 @@ async function main() {
   const defaultImport = join(REPO_ROOT, 'scripts', 'import-libs.json');
   const importPath = args.import ?? (existsSync(defaultImport) ? defaultImport : null);
   push('  import   = ' + (importPath ?? 'none'));
+  const defaultGallery = join(REPO_ROOT, 'scripts', 'gallery-shim.json');
+  const galleryPath = args.gallery ?? (existsSync(defaultGallery) ? defaultGallery : null);
+  push('  gallery  = ' + (galleryPath ?? 'none'));
 
   const refs = checkBaseRefs(site, normalised, args.strict);
   push('  scanned ' + refs.scanned + ' text files, ' + (refs.bytes / 1024).toFixed(0) + ' KiB');
@@ -2228,6 +2485,7 @@ async function main() {
   const shellCache = shellCacheState(site);
   const corner = checkCornerSweep(site, cornerPath);
   const importLibs = checkImportLibs(site, importPath);
+  const gallery = checkGalleryShim(site, galleryPath);
   const jsxFactoryList = jsxFactory
     .filter((r) => r.failures.length > 0)
     .map((r) => ({
@@ -2248,6 +2506,7 @@ async function main() {
     escapedList, missingList, externalList, jsxList, shellList, jsxFactoryList,
     jsxSites.findings, egress.findings, storage.findings, csp.findings,
     swcache.findings, shellCache.findings, corner.findings, importLibs.findings,
+    gallery.findings,
   ];
   for (const list of lists) {
     for (const f of list) {
@@ -2451,9 +2710,28 @@ async function main() {
       'the control exists but an include naming a shipped library cannot be resolved', accepted));
   }
 
+  push('');
+  push('16. static gallery shim');
+  push('   (the Gallery panel reads four origin-root endpoints that only a server answers, so on a static ' +
+    'deploy its fetches fail and the section never renders. A worker registered at scope /spice-simulator/ ' +
+    'still observes those requests -- scope decides which clients it controls, not which of their requests ' +
+    'it sees -- and scripts/gallery-shim.json routes them to files under <scope>gallery/. A tree with the ' +
+    'panel but no route leaves the panel dark; a route defined after the /api/ early return is dark with ' +
+    'every one of its strings still present)');
+  if (gallery.findings.length > 0) {
+    push(...render(gallery.findings, 'gallery findings',
+      'the Gallery panel exists but the endpoints it reads stay a 404', accepted));
+  } else if (gallery.status !== 'checked') {
+    push('  --  ' + gallery.notes.join('; '));
+  } else {
+    push('  ok  ' + gallery.routes.length + ' route(s) ' + JSON.stringify(gallery.routes) +
+      ' answered from ' + JSON.stringify(gallery.assetRoot) + ', id shape-checked before it is joined into a path, ' +
+      'answers only (writes no Cache Storage)');
+  }
+
   if (stale.length > 0) {
     push('');
-    push('16. stale accepted deviations');
+    push('17. stale accepted deviations');
     push(...render(stale, 'accepted entries that matched nothing', null, () => false));
   }
 
@@ -2533,6 +2811,15 @@ async function main() {
         libraries: importLibs.libraries,
         findings: importLibs.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
         notes: importLibs.notes,
+      },
+      galleryShim: {
+        manifest: galleryPath,
+        status: gallery.status,
+        apiPrefix: gallery.apiPrefix ?? null,
+        assetRoot: gallery.assetRoot ?? null,
+        routes: gallery.routes,
+        findings: gallery.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
+        notes: gallery.notes,
       },
       outbound: {
         manifest: outboundPath,

@@ -1,0 +1,66 @@
+{
+  "$comment": "Answer the Gallery panel's four /api/gallery endpoints from files committed under <scope>gallery/, so the panel is usable on a static deploy. Shipped empty: the panel renders gallery cards INSTEAD of the built-in example list, so any default content would either hide the instructor-unlock flow or bypass it.",
+  "$how": "node scripts/patch-outbound.mjs --manifest=scripts/gallery-shim.json   (then: npm run bump:shellcache if check 13 says so)",
+  "$shape": "Both repairs are insertions, so each declares a marker instead of relying on anchor consumption. regen: node analysis/_tmp/_m10/gen-gallery-shim.mjs",
+  "contract": {
+    "file": "sw.js",
+    "apiPrefix": "/api/gallery",
+    "assetRoot": "gallery/",
+    "routes": [
+      "/api/gallery",
+      "/api/gallery/tags",
+      "/api/gallery/<id>",
+      "/api/gallery/<id>/preview.svg"
+    ],
+    "listShape": [
+      "entries",
+      "nextCursor",
+      "total"
+    ],
+    "tagsShape": [
+      "tags"
+    ],
+    "detailShape": [
+      "projectText",
+      "entry",
+      "ownerUserId"
+    ],
+    "idPattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+    "emptyIndex": {
+      "entries": []
+    },
+    "markers": {
+      "helpers": "const GALLERY_API = \"/api/gallery\";",
+      "dispatch": "if (isGalleryApi(event.request)) {"
+    }
+  },
+  "targets": [],
+  "repairs": [
+    {
+      "id": "gallery-api-helpers",
+      "file": "sw.js",
+      "why": "the four endpoint handlers, the index reader and the id guard. Kept out of the fetch listener so the routing change below is one line of dispatch rather than a block of logic.",
+      "requires": "function scopeUrl()",
+      "marker": "const GALLERY_API = \"/api/gallery\";",
+      "edits": [
+        {
+          "find": "self.addEventListener(\"fetch\", (event) => {",
+          "replace": "/**\n * Static gallery shim.\n *\n * The Gallery panel reads four origin-root endpoints --\n *   /api/gallery                            list (+ ?author=, ?tags=, ?cursor=)\n *   /api/gallery/tags                       tag facets\n *   /api/gallery/<id>                       one entry, as projectText\n *   /api/gallery/<id>/preview.svg           the card image (revisioned)\n * -- and only a server can answer them. On this deploy there is no server, the\n * panel's fetch fails, the client degrades to `null`, and the gallery section\n * never renders. That is the whole of the gallery feature here: reachable code,\n * no reachable data.\n *\n * This route answers those four from files committed under <scope>gallery/:\n *\n *   gallery/index.json            { \"entries\": [ { id, name, author?,\n *                                   description?, tags?, previewRevision? } ] }\n *   gallery/<id>/project.json     the project payload, verbatim, as text\n *   gallery/<id>/preview.svg      the card image\n *\n * It is shipped with an EMPTY index on purpose, and that is a product decision\n * rather than an oversight. A non-empty list does not add a section to the\n * panel: the panel renders `showGallery ? galleryCards : builtinCards`, so any\n * entry at all replaces the built-in example list -- the student library plus\n * whatever the instructor unlock reveals. A static gallery therefore cannot be\n * \"on\" by default without either hiding the unlock flow or (if the locked labs\n * were listed here, since this path has no unlock check) bypassing it. An\n * operator who wants the panel populated drops a gallery/ directory in; the\n * default deploy keeps exactly the behaviour it shipped with.\n *\n * It ANSWERS rather than caches, which is why it sits before the isSameOriginApi\n * early return below instead of behind it. That branch deliberately leaves\n * /api/* to its own HTTP policy -- revisioned preview URLs exist so a changed\n * preview is never served under an old name -- and a shim that stored them in\n * the build-scoped shell cache would defeat exactly that. Nothing here touches\n * Cache Storage.\n */\nconst GALLERY_API = \"/api/gallery\";\n// Ids become path segments, so they are matched against a closed shape before\n// they are joined to anything. `../` cannot survive this test.\nconst GALLERY_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/i;\n\nfunction isGalleryApi(request) {\n  const url = new URL(request.url);\n  return (\n    url.origin === scopeUrl().origin &&\n    (url.pathname === GALLERY_API || url.pathname.startsWith(GALLERY_API + \"/\"))\n  );\n}\n\nfunction galleryJson(body, status) {\n  return new Response(JSON.stringify(body), {\n    status: status ?? 200,\n    headers: { \"content-type\": \"application/json; charset=utf-8\" },\n  });\n}\n\nfunction galleryEntryView(entry) {\n  const view = { id: entry.id, name: entry.name };\n  if (typeof entry.author === \"string\") view.author = entry.author;\n  if (typeof entry.description === \"string\") view.description = entry.description;\n  if (Array.isArray(entry.tags)) {\n    view.tags = entry.tags.filter((tag) => typeof tag === \"string\" && tag);\n  }\n  if (typeof entry.previewRevision === \"string\") {\n    view.previewRevision = entry.previewRevision;\n  }\n  return view;\n}\n\n/** The committed index, with anything that is not a usable entry dropped. */\nfunction readGalleryIndex() {\n  return fetch(new URL(\"gallery/index.json\", scopeUrl()).toString(), {\n    cache: \"no-store\",\n  })\n    .then((response) => (response.ok ? response.json() : null))\n    .catch(() => null)\n    .then((body) => {\n      const list = body && Array.isArray(body.entries) ? body.entries : [];\n      return list.filter(\n        (entry) =>\n          entry &&\n          typeof entry.id === \"string\" &&\n          GALLERY_ID.test(entry.id) &&\n          typeof entry.name === \"string\",\n      );\n    });\n}\n\n/** Tag facets, derived from the index the way a server would derive them. */\nfunction galleryTags(entries) {\n  const counts = new Map();\n  for (const entry of entries) {\n    for (const tag of Array.isArray(entry.tags) ? entry.tags : []) {\n      if (typeof tag === \"string\" && tag) counts.set(tag, (counts.get(tag) ?? 0) + 1);\n    }\n  }\n  return [...counts.entries()]\n    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))\n    .map(([tag, count]) => ({ tag, count }));\n}\n\nfunction galleryApiResponse(request) {\n  const url = new URL(request.url);\n  const rest = url.pathname.slice(GALLERY_API.length);\n\n  if (rest === \"\") {\n    return readGalleryIndex().then((entries) => {\n      const author = (url.searchParams.get(\"author\") ?? \"\").trim().toLowerCase();\n      const wanted = (url.searchParams.get(\"tags\") ?? \"\")\n        .split(\",\")\n        .map((tag) => tag.trim().toLowerCase())\n        .filter(Boolean);\n      let list = entries;\n      if (author) {\n        list = list.filter((entry) =>\n          String(entry.author ?? \"\").toLowerCase().includes(author),\n        );\n      }\n      if (wanted.length > 0) {\n        list = list.filter((entry) => {\n          const held = (Array.isArray(entry.tags) ? entry.tags : []).map((tag) =>\n            String(tag).toLowerCase(),\n          );\n          return wanted.every((tag) => held.includes(tag));\n        });\n      }\n      return galleryJson({\n        entries: list.map(galleryEntryView),\n        nextCursor: null,\n        total: list.length,\n      });\n    });\n  }\n\n  if (rest === \"/tags\") {\n    return readGalleryIndex().then((entries) =>\n      galleryJson({ tags: galleryTags(entries) }),\n    );\n  }\n\n  const match = /^\\/([^/]+)(\\/preview\\.svg)?$/.exec(rest);\n  if (!match || !GALLERY_ID.test(match[1])) {\n    return Promise.resolve(galleryJson({ error: \"not-found\" }, 404));\n  }\n  const id = match[1];\n\n  if (match[2]) {\n    return fetch(new URL(\"gallery/\" + id + \"/preview.svg\", scopeUrl()).toString(), {\n      cache: \"no-store\",\n    })\n      .then((response) =>\n        response.ok\n          ? new Response(response.body, {\n              status: 200,\n              headers: { \"content-type\": \"image/svg+xml; charset=utf-8\" },\n            })\n          : new Response(\"\", { status: 404 }),\n      )\n      .catch(() => new Response(\"\", { status: 404 }));\n  }\n\n  return readGalleryIndex()\n    .then((entries) => {\n      const entry = entries.find((candidate) => candidate.id === id);\n      if (!entry) return null;\n      return fetch(new URL(\"gallery/\" + id + \"/project.json\", scopeUrl()).toString(), {\n        cache: \"no-store\",\n      })\n        .then((response) => (response.ok ? response.text() : null))\n        .catch(() => null)\n        .then((projectText) =>\n          projectText === null\n            ? null\n            : galleryJson({\n                projectText,\n                entry: {\n                  name: entry.name,\n                  author: entry.author ?? \"\",\n                  description: entry.description ?? \"\",\n                  tags: Array.isArray(entry.tags) ? entry.tags : [],\n                },\n                ownerUserId: null,\n              }),\n        );\n    })\n    .then((response) => response ?? galleryJson({ error: \"not-found\" }, 404));\n}\nself.addEventListener(\"fetch\", (event) => {"
+        }
+      ]
+    },
+    {
+      "id": "gallery-api-dispatch",
+      "file": "sw.js",
+      "why": "route /api/gallery before the isSameOriginApi early return, which deliberately leaves every other /api/ path to its own HTTP policy. The shim answers; it never writes Cache Storage, so revisioned preview URLs keep the policy that branch protects.",
+      "requires": "function scopeUrl()",
+      "marker": "if (isGalleryApi(event.request)) {",
+      "edits": [
+        {
+          "find": "  if (isSameOriginApi(event.request)) return;",
+          "replace": "  // The gallery shim answers the four endpoints the panel calls, and only those.\n  // Every other /api/ path still falls through to the early return below, where\n  // the API is left to its own HTTP policy.\n  if (isGalleryApi(event.request)) {\n    event.respondWith(galleryApiResponse(event.request));\n    return;\n  }\n\n  if (isSameOriginApi(event.request)) return;"
+        }
+      ]
+    }
+  ]
+}

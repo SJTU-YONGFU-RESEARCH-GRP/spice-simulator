@@ -127,6 +127,19 @@ jobs:
       # pool and the local-only guard and requires check 15 to name each.
       - name: Prove the import-reachability check is not vacuous (mutation test)
         run: node scripts/spice-import.negctl.mjs --static-only
+      # The Gallery panel reads four endpoints at the origin ROOT while this app
+      # is deployed under /spice-simulator/ and its worker is registered with
+      # scope /spice-simulator/. The natural reading is "out of scope, so a
+      # worker can never answer them" -- and that reading is wrong: scope decides
+      # which clients a worker controls, not which of their requests it observes.
+      # Check 16 (inside the artifact guard above) holds the injected route to its
+      # contract. The case it exists for is a dispatch moved behind the /api/
+      # early return, which leaves every string of a working shim present exactly
+      # once and the four endpoints 404: a text search cannot see it, an ordered
+      # assertion can. This step walks ten mutations -- two of them controls, one
+      # the unpatched tree -- and requires each to be named for its own reason.
+      - name: Prove the static-gallery check is not vacuous (mutation test)
+        run: node scripts/gallery-shim.negctl.mjs --static-only
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -270,5 +283,34 @@ jobs:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
       - name: Prove the import guard is not vacuous (mutation test)
         run: node scripts/spice-import.negctl.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # Is the Gallery panel usable on a static deploy? It reads four endpoints
+      # that only a server answers; the route above makes the worker answer them
+      # from files under gallery/. This drives the panel in a real browser on two
+      # trees. On the committed tree the gallery must stay DARK -- the built-in
+      # example card is what a student sees -- while the list endpoints stop being
+      # 404s, because a shim that lit the panel up here would be replacing the
+      # example list rather than adding to it. On a copy with a two-entry
+      # gallery/ it must LIGHT: the controls appear, the cards render, the tag
+      # facets carry the right counts, the preview image loads from its
+      # revisioned URL, and clicking a card opens the circuit through
+      # /api/gallery/<id> -- the half a list-only test misses. The fixture's
+      # project payload is lifted out of the shipped chunk rather than written by
+      # hand, so the schema under test is the product's.
+      - name: The Gallery panel works on a static deploy
+        run: node scripts/gallery-shim.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # And prove the two channels above are not vacuous. Renaming the list key
+      # and moving only the preview path must each turn exactly the POPULATED tree
+      # red and leave the shipped tree green -- a mutant that took both down could
+      # not tell "this key broke" from "the shim broke outright". Removing the
+      # dispatch must turn both red. And the id guard's mutant declares itself
+      # static-only, because no fixture supplies a hostile id: the browser is
+      # required to be honest about the one rule it does not cover rather than
+      # implying coverage it does not have.
+      - name: Prove the static-gallery check is not vacuous (mutation test)
+        run: node scripts/gallery-shim.negctl.mjs --require
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}

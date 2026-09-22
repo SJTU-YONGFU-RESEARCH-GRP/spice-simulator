@@ -60,6 +60,8 @@ node scripts/shell-cache.negctl.mjs --static-only
 node scripts/corner-sweep.negctl.mjs
 node scripts/spice-import.mjs --require
 node scripts/spice-import.negctl.mjs
+node scripts/gallery-shim.mjs --require
+node scripts/gallery-shim.negctl.mjs
 ```
 
 or `npm run check:artifacts` / `npm run smoke` / `npm run check:storage` /
@@ -70,7 +72,8 @@ or `npm run check:artifacts` / `npm run smoke` / `npm run check:storage` /
 `npm run check:examples` / `npm run check:examples:neg` /
 `npm run check:shellcache` / `npm run check:shellcache:neg:static` /
 `npm run check:corner` / `npm run check:corner:neg` /
-`npm run check:import` / `npm run check:import:neg:static`.
+`npm run check:import` / `npm run check:import:neg:static` /
+`npm run check:gallery` / `npm run check:gallery:neg:static`.
 
 `npm run bump:shellcache` rewrites `sw.js`'s cache constant from the artifact.
 Run it after any change to `site/`; check 13 fails the build if you forget.
@@ -90,6 +93,16 @@ anchor is gone") only settles an edit that consumes its anchor. That patch grows
 the chunk, which shifts the byte offsets the storage acceptances in
 `scripts/known-deviations.json` are keyed by; those were re-derived, and check 10
 is what says so if they are not.
+
+`npm run patch:gallery` re-plays `scripts/gallery-shim.json` the same way: both
+repairs are insertions, each declares a marker, and here too the marker only says
+the bytes are *there* — an insertion keeps its anchor, so "replacement present,
+anchor gone" can never settle and a marker is the only idempotence test available.
+Neither channel is allowed to stop at that, which is why check 16 asserts the
+dispatch is **called** and `gallery-shim.negctl.mjs` carries the mutant that keeps
+every string of a working shim and kills the route anyway. Unlike the import patch
+this one does not grow anything the shell cache hashes, so it needs no token bump
+(see the C3 section below for what the shim does and what it deliberately does not).
 
 The process-corner sweep is **teaching-grade**: `tt`/`ss`/`ff` scale the
 Level-1 (Shichman–Hodges) parameters of `site/models/cmos.lib` by a made-up
@@ -161,6 +174,56 @@ C2b, not C3, because it is the **reachable half of C2** (the feasibility list's 
 "make `cap.lib`/`opamp.lib` reachable") rather than the next item on that list — whose
 C3 is the unrelated service-worker Gallery shim.
 
+That C3 is what `npm run patch:gallery` is. The Gallery panel reads four endpoints at
+the **origin root** — `/api/gallery`, `/api/gallery/tags`, `/api/gallery/<id>` and
+`/api/gallery/<id>/preview.svg` — and only a server can answer them, so on this static
+deploy its fetches fail, the client degrades to `null`, and the gallery section never
+renders. `scripts/gallery-shim.json` routes those four through the service worker to
+files committed under `<scope>gallery/`, which makes the panel usable read-only.
+
+It is worth being exact about why that works, because the obvious reading says it
+cannot: the worker is registered with `scope: /spice-simulator/` while `/api/gallery…`
+is at the origin root, i.e. out of scope. **Scope decides which clients a worker
+controls, not which of their requests it observes.** A fetch made by a controlled page
+fires the worker's `fetch` event whatever the request URL, and `respondWith()` on an
+out-of-scope request is honoured. That was not reasoned out, it was measured —
+`gallery-shim.mjs` is the measurement — and the same file records it so the next reader
+does not have to re-derive it.
+
+The shim **ships with an empty index**, and that is a product decision rather than an
+oversight. The panel renders `showGallery ? galleryCards : builtinCards`, so a non-empty
+gallery does not *add* a section — it **replaces** the built-in example list, which is
+the student library plus whatever the instructor unlock reveals. This route has no
+unlock check, so listing the locked labs there would not merely hide that gate, it would
+bypass it. An operator who wants the panel populated drops a `gallery/` directory in:
+
+```text
+site/gallery/index.json          { "entries": [ { "id": "...", "name": "...",
+                                   "author"?: "...", "description"?: "...",
+                                   "tags"?: ["..."], "previewRevision"?: "..." } ] }
+site/gallery/<id>/project.json   the project payload, verbatim, as text
+site/gallery/<id>/preview.svg    the card image
+```
+
+`<id>` is shape-checked (`^[a-z0-9][a-z0-9._-]{0,63}$`) before it is ever joined into a
+path, and the shim **answers rather than caches**: it sits in front of the branch that
+deliberately keeps `/api/*` out of the build-scoped shell cache, because a revisioned
+preview URL that gets stored under one revision and served under the next is exactly the
+stale-image bug that branch exists to prevent. Two things follow from "answers only":
+the empty index is not a *repair* — the four endpoints stop being 404s, which
+`gallery-shim.mjs` requires even on the shipped tree — and a populated gallery is a real
+behaviour change, not an additive one.
+
+`npm run bump:shellcache` is **not** needed after this patch: `sw.js` itself is not among
+the bytes the worker route stores, so the derived token does not move. Check 16 is what
+says so if that ever changes.
+
+The scope lesson is the transferable half: "the worker is registered under X, so it cannot
+answer Y" is a claim about *reachability*, and reachability claims here are settled by
+driving the product (see also the C2 conclusion above, where a capability that exists in
+the artifact is unreachable from this deploy, and the `sky130` executor, which is served
+outside this site).
+
 `npm run preview` serves with `Cache-Control: no-store`, which is what you want
 while editing the artifact but which also stops the service worker from caching
 anything — so a preview cannot tell you whether the worker works. Pass
@@ -168,7 +231,7 @@ anything — so a preview cannot tell you whether the worker works. Pass
 
 | Check | Question it answers |
 |---|---|
-| `check-artifacts.mjs` | Is the bundle self-consistent — do its references resolve, is there no development JSX runtime or folded-`undefined` call site, is every network target in the tree classified, is every storage read inside a `try`/`catch`, does the shell still carry its Content-Security-Policy, does `sw.js` still have the shape its caching needs, does the worker's atomic install payload fit its budget, does the constant it opens its cache under still describe this tree, does the corner set the panel offers match the model library that has to answer it, and does an imported netlist still resolve the model libraries this build ships (including that the text embedded in the chunk is still the bytes of `site/models/*.lib` and that the injected pool is called rather than merely present)? |
+| `check-artifacts.mjs` | Is the bundle self-consistent — do its references resolve, is there no development JSX runtime or folded-`undefined` call site, is every network target in the tree classified, is every storage read inside a `try`/`catch`, does the shell still carry its Content-Security-Policy, does `sw.js` still have the shape its caching needs, does the worker's atomic install payload fit its budget, does the constant it opens its cache under still describe this tree, does the corner set the panel offers match the model library that has to answer it, and does an imported netlist still resolve the model libraries this build ships (including that the text embedded in the chunk is still the bytes of `site/models/*.lib` and that the injected pool is called rather than merely present)? It also holds the static gallery shim to its contract: both insertions present, the dispatch **before** the `/api/` early return that would otherwise swallow it (a defined-but-dead route passes every string test), the entry id shape-checked before it becomes a path segment, no Cache Storage access in a region that must only answer, and every key the shipped client reads still written by an object literal passed to `galleryJson()` — where renaming `entries:` to `items:` leaves the identifier `entries` all over the index reader and so defeats a substring test. |
 | `smoke-test.mjs` | Does the editor actually run — does a real simulation finish with zero uncaught errors? |
 | `storage-resilience.mjs` | Does the editor still render in a browser that **denies** storage? Loads the home page and an `?example=` deep link with `localStorage`/`sessionStorage` replaced by throwing getters — the failure mode of Safari private mode, blocked site data and partitioned iframes — and requires the editor, not the crash screen. |
 | `numeric-crosscheck.mjs` | Are the numbers **right** — does the shipped WASM agree with first-principles closed forms and with model-independent invariants (including for BSIM3/BSIM4, which have no closed form)? It also runs the two **role libraries** the deploy ships (`cap.lib`, `opamp.lib`): an ideal capacitor must be an open circuit at dc and charge with `tau = R*C`, and `opamp_se` must follow its soft-rail tanh transfer behind the series `Rout`. |
@@ -185,6 +248,8 @@ anything — so a preview cannot tell you whether the worker works. Pass
 | `example-outcomes.negctl.mjs` | Would that check **notice**? Six mutants — the pre-run warning removed, the unavailable profile declared as available, the runnable lab's model card deleted, the Run control made unaddressable, a catalog entry pointing at a payload that does not exist, and the only un-runnable lab removed from the catalog — each required to turn the check red for its own stated reason. The control case runs first: if it is not green, nothing else in the file means anything. |
 | `spice-import.mjs` | Can a user actually get a netlist in, and what happens to its `.include` lines? Clicks the real **Import SPICE** label in a real browser with file-chooser interception on, and requires Chrome to report the chooser event before it hands any files over — so "the control is drivable through the picker a user would use" is asserted, not assumed. Then it reads the product's own sentence back: four spellings (no includes, a bare name with the library selected, the `../models/<lib>` form both library headers teach, the bare name with nothing selected) must import, and two controls must still refuse — a library this build does not ship, and `/usr/share/cap.lib`, which is deliberately a name the pool holds so that relaxing the local-only rule turns it green. |
 | `spice-import.negctl.mjs` | Would that guard **notice**? Two mutants against real copies, each pinning one half of the repair: emptying the pool must turn exactly `bare-unselected` red while `header-form` stays green — the user selected that file, so the fallback found it and the pool was never needed, and a mutant that took both down would not tell the two mechanisms apart — and deleting the local-only guard must turn exactly `absolute-include` red. Both channels are required to see each mutant, with `check 15` naming it: the static side catches a pool that is present but never wired, which a browser run cannot distinguish from one that is simply empty. `--static-only` runs without a browser and first requires check 15 to be silent on the unmutated tree. |
+| `gallery-shim.mjs` | Can the Gallery panel work on a static deploy? Drives the panel in a real browser on two trees. On the committed tree the gallery must stay **dark** — the built-in example card is what a student sees — while the two list endpoints stop being 404s, because a shim that lit the panel up here would be replacing the example list rather than adding to it. On a copy with a two-entry `gallery/` the panel must **light**: the search box and tag menu appear, the cards render, the tag facets carry the right counts, the preview image loads from its revisioned URL, and clicking a card opens the circuit through `/api/gallery/<id>`. That last step is the half a list-only test misses. The fixture's project payload is lifted out of the shipped chunk and evaluated rather than hand-written, so the schema under test is the product's, not my reading of it. It first had to falsify the natural reading of the worker's scope (see above) — that is why it exists at all. |
+| `gallery-shim.negctl.mjs` | Would that guard **notice**? Ten cases against real copies, including two controls (an unmutated tree, and the same tree with the manifest reversed), and the case the whole check exists for: `route-after-api-return` moves the dispatch behind `if (isSameOriginApi(...)) return;` — every string the shim consists of is still present exactly once, a text search finds a perfectly healthy shim, and the four endpoints are 404s. Nothing but an ordered assertion, or a browser, can see it. The rest are surgical in the other direction: removing the dispatch turns **both** browser cases red, while renaming the list key or moving only the preview path must turn exactly the **populated** tree red and leave the shipped tree green — a mutant that took both down would not tell "this key broke" apart from "the shim broke outright". Three cases declare themselves **static-only** and say why: no fixture supplies a hostile id, so the id guard's failure surface is not observable in either browser case, and the static assertion is its control rather than a claim the browser also makes. `--static-only` runs the whole suite without a browser. |
 | `shell-cache.mjs` | Does the constant `sw.js` opens its cache under still describe **this tree**? Upstream's build injects a digest of the emitted asset graph there, and that injection is what lets a deploy retire a stale shell. This repository does not run that build: every repair is a hand-patch that *keeps* the filename the content hash is supposed to police, and the static route is cache-first with no revalidation — so a stale constant hides the repair from every returning client for good. The token is therefore **derived, not chosen**: a SHA-256 over the bytes these routes could store — the `shellUrls()` members, every extension a resource tag can request, and everything under `ENGINE_PAYLOAD_DIRS` — plus those two declarations, because they decide which of those URLs are stored. A file the worker can never be asked for (a licence text, a release manifest) is deliberately *not* hashed: it cannot go stale in anyone's cache. `--write` restores it; `--check` (the default) reports. |
 | `shell-cache.negctl.mjs` | Would check 13 **notice**? Nine mutants — a chunk patched while its content-hashed filename stays, a model card patched (in scope only through `ENGINE_PAYLOAD_DIRS`), the constant set by hand instead of derived, the constant deleted, `activate()`'s retirement prefix narrowed so no old shell is ever dropped, a directory added to `ENGINE_PAYLOAD_DIRS`, a member dropped from `shellUrls()`, `install()` re-pointed at a cache name outside the prefix, and a file added that this worker can never be asked for (which must **not** move the token, pinning the scope) — each required to produce its own outcome. Both channels run, and neither contains the other: `activate-filter-narrowed` requires the runtime channel to *pass* (the retirement rule is static-only), while `install-cache-renamed` leaves the static guard **completely green** — the constant and both declarations are untouched — and only the browser can report it. `--static-only` runs without a browser. |
 | `corner-sweep.negctl.mjs` | Would the corner feature **notice** if it broke? Fifteen cases against real patched copies: a control, the unpatched tree, the capability's corner list emptied or re-ordered, the selector emission dropped, mapped to the wrong value, given an extra branch, or having the typical corner map to a non-zero selector, the emitted `.param` renamed, the descriptor or the run record stripped, the library's base model moved or a device left unmodelled, a manifest that declares a corner the artifact does not implement, and a manifest that is vacuous. Each must turn check 14 red for its own named reason. The runtime half is pinned by `numeric-crosscheck.negctl.mjs`'s `corner_inert` mutant, which edits the **shipped library** so it stops answering the selector: `corner_shifts_every_device` must fail while `corner_default_matches_frozen` stays green — a guard that only ever saw one of those two outcomes could not tell a live sweep from a dead one. |
