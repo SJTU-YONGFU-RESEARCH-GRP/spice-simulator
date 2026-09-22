@@ -1,0 +1,88 @@
+{
+  "$comment": "Give every built-in example its own project identity. Three of the five shipped labs carry the project factory's placeholder identity (`project-main` / `New Circuit`) instead of their own, so the title bar shows 'New Circuit' after the user deliberately opened 'Two-Stage Op Amp'.",
+  "$how": "node scripts/patch-outbound.mjs --manifest=scripts/example-identity.json   (then: npm run bump:shellcache)",
+  "$shape": "Each edit is a REPLACEMENT, so it declares only find/replace and needs no marker: the anchor is consumed, not kept. Every find anchors on the net id at the tail of its own payload document -- net-ui-8, net-contact-gnd1, net-contact-p13 are unique in the artifact, so the three near-identical placeholder identities cannot be confused for one another.",
+  "$mechanism": [
+    "The project factory `function pl(e,t,n='document-main')` takes (id, name) and returns a project whose name is whatever the caller passed. Two callers pass a real name: the New Project command passes 'New Circuit' (which is correct there) and the catalog builder passes nothing extra.",
+    "Every example payload was authored as a literal JSON blob. Four of the five name themselves correctly, one (common-source-amplifier) does so under its own id, and one (five-transistor-ota-sky130) carries its own id and a longer lab title. The remaining three -- two-stage-op-amp, current-mirror-loaded-differential-pair, fully-differential-two-stage-op-amp -- kept the placeholder, and the placeholder surfaces in the title bar: `_m({projectName: j.name, ...})` renders `j.name`, which is the project object handed straight to `replaceActiveProject`.",
+    "Nothing keys off the literal string: `name === 'New Circuit'` occurs nowhere in the artifact, so renaming these three is a display-and-data fix with no behavioural dependency to preserve.",
+    "This repair covers the artifact's stored identity. The path that OWNS the display name when a lab is opened from the catalog (?example=<id> and the Examples panel) is repaired separately in the same manifest, because a stored fix alone would be undone by the next payload that chose a placeholder."
+  ],
+  "contract": {
+    "chunk": "assets/App-D0jgYDVz.js",
+    "placeholderId": "project-main",
+    "placeholderName": "New Circuit",
+    "examples": [
+      {
+        "catalogId": "current-mirror-loaded-differential-pair",
+        "catalogName": "Current-Mirror-Loaded Differential Pair",
+        "payloadVar": "$h"
+      },
+      {
+        "catalogId": "fully-differential-two-stage-op-amp",
+        "catalogName": "Fully Differential Two-Stage Op Amp",
+        "payloadVar": "eg"
+      },
+      {
+        "catalogId": "two-stage-op-amp",
+        "catalogName": "Two-Stage Op Amp",
+        "payloadVar": "tg"
+      }
+    ],
+    "alreadyNamed": [
+      { "catalogId": "common-source-amplifier", "payloadVar": "Qh" },
+      { "catalogId": "five-transistor-ota-sky130", "payloadVar": "ng" }
+    ]
+  },
+  "targets": [],
+  "repairs": [
+    {
+      "id": "example-identity-current-mirror",
+      "file": "assets/App-D0jgYDVz.js",
+      "why": "the Current-Mirror-Loaded Differential Pair lab stored the project factory's placeholder identity",
+      "requires": "id:`current-mirror-loaded-differential-pair`,name:`Current-Mirror-Loaded Differential Pair`,description:",
+      "edits": [
+        {
+          "find": "netId:`net-ui-8`,start:{junctionId:`junction-ui-18`,kind:`junction`}}],sourceStatus:`connectivity-modified`}],externalSubcircuitDefinitions:[],id:`project-main`,name:`New Circuit`,schemaVersion:47",
+          "replace": "netId:`net-ui-8`,start:{junctionId:`junction-ui-18`,kind:`junction`}}],sourceStatus:`connectivity-modified`}],externalSubcircuitDefinitions:[],id:`current-mirror-loaded-differential-pair`,name:`Current-Mirror-Loaded Differential Pair`,schemaVersion:47"
+        }
+      ]
+    },
+    {
+      "id": "example-identity-fully-differential",
+      "file": "assets/App-D0jgYDVz.js",
+      "why": "the Fully Differential Two-Stage Op Amp lab stored the project factory's placeholder identity",
+      "requires": "id:`fully-differential-two-stage-op-amp`,name:`Fully Differential Two-Stage Op Amp`,description:",
+      "edits": [
+        {
+          "find": "netId:`net-contact-gnd1`,start:{junctionId:`junction-ui-60`,kind:`junction`}}],sourceStatus:`connectivity-modified`}],externalSubcircuitDefinitions:[],id:`project-main`,name:`New Circuit`,schemaVersion:47",
+          "replace": "netId:`net-contact-gnd1`,start:{junctionId:`junction-ui-60`,kind:`junction`}}],sourceStatus:`connectivity-modified`}],externalSubcircuitDefinitions:[],id:`fully-differential-two-stage-op-amp`,name:`Fully Differential Two-Stage Op Amp`,schemaVersion:47"
+        }
+      ]
+    },
+    {
+      "id": "example-identity-two-stage",
+      "file": "assets/App-D0jgYDVz.js",
+      "why": "the Two-Stage Op Amp lab stored the project factory's placeholder identity",
+      "requires": "id:`two-stage-op-amp`,name:`Two-Stage Op Amp`,description:",
+      "edits": [
+        {
+          "find": "netId:`net-contact-p13`,start:{instanceId:`C10`,kind:`terminal`,pinName:`2`}}],sourceStatus:`connectivity-modified`}],externalSubcircuitDefinitions:[],id:`project-main`,name:`New Circuit`,schemaVersion:47",
+          "replace": "netId:`net-contact-p13`,start:{instanceId:`C10`,kind:`terminal`,pinName:`2`}}],sourceStatus:`connectivity-modified`}],externalSubcircuitDefinitions:[],id:`two-stage-op-amp`,name:`Two-Stage Op Amp`,schemaVersion:47"
+        }
+      ]
+    },
+    {
+      "id": "example-catalog-name-authoritative",
+      "file": "assets/App-D0jgYDVz.js",
+      "why": "the catalog owns the name a lab is shown under, but the id -> project boundary used by ?example=<id> and the Examples panel handed the stored name straight to the title bar, so a placeholder stored in a payload reached the user",
+      "requires": "function og(e){",
+      "edits": [
+        {
+          "find": "function og(e){\n  let t=ig.find(t=>t.id===e);\n  return !t || t.requiresUnlock && !dg() ? null : structuredClone(t.project);\n}",
+          "replace": "/* PATCH(B10 2026-09-22): the catalog name is authoritative.\n   og() is the single id -> project boundary (see the A6 note above), and it\n   returned the payload's stored name unchanged. Four of the five labs name\n   themselves correctly, but a payload that kept the project factory's\n   placeholder (\"New Circuit\" / \"project-main\") surfaced that placeholder as\n   the circuit name in the title bar -- the one string a user reads to know\n   which lab they opened. Overwrite it with the catalog entry's name, which is\n   what the Gallery path already did (`u.entry?.name ?? d.name`). The stored\n   id/name are repaired too (see the three example-identity repairs), so this\n   is a belt-and-braces guard for any payload added later, not the only fix. */\nfunction og(e){\n  let t=ig.find(t=>t.id===e);\n  if(!t || t.requiresUnlock && !dg()) return null;\n  let n=structuredClone(t.project);\n  n.name=t.name;\n  return n;\n}"
+        }
+      ]
+    }
+  ]
+}

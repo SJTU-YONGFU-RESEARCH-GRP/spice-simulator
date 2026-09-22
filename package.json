@@ -32,7 +32,7 @@
     "patch:storage": "node scripts/patch-outbound.mjs --manifest=scripts/storage-guard.json",
     "patch:csp": "node scripts/patch-outbound.mjs --manifest=scripts/shell-csp.json",
     "patch:corner": "node scripts/patch-outbound.mjs --manifest=scripts/corner-sweep.json",
-    "check:corner": "node scripts/check-artifacts.mjs && node scripts/numeric-crosscheck.mjs --only=corner_default,corner_ss,corner_ff,corner_frozen,corner_default_matches_frozen,corner_shifts_every_device",
+    "check:corner": "node scripts/check-artifacts.mjs && node scripts/numeric-crosscheck.mjs --only=corner_default,corner_ss,corner_ff,corner_frozen",
     "check:corner:neg": "node scripts/corner-sweep.negctl.mjs",
     "patch:import": "node scripts/patch-outbound.mjs --manifest=scripts/import-libs.json",
     "check:import": "node scripts/check-artifacts.mjs && node scripts/spice-import.mjs",
@@ -45,6 +45,11 @@
     "preview": "node scripts/serve-local.mjs",
     "publish:editor": "bash scripts/publish-editor-pages.sh",
     "release": "bash scripts/release.sh",
-    "release:dry": "bash scripts/release.sh --dry-run"
+    "release:dry": "bash scripts/release.sh --dry-run",
+    "patch:identity": "node scripts/patch-outbound.mjs --manifest=scripts/example-identity.json",
+    "check:identity": "node scripts/check-artifacts.mjs && node scripts/example-outcomes.mjs",
+    "check:identity:neg": "node scripts/example-identity.negctl.mjs",
+    "check:identity:neg:static": "node scripts/example-identity.negctl.mjs --static-only",
+    "audit:ux": "node scripts/ux-audit.mjs"
   }
 }

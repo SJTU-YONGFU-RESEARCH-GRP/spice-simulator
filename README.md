@@ -70,10 +70,23 @@ or `npm run check:artifacts` / `npm run smoke` / `npm run check:storage` /
 `npm run check:offline` / `npm run check:offline:neg:static` /
 `npm run check:precache` / `npm run check:precache:neg:static` /
 `npm run check:examples` / `npm run check:examples:neg` /
+`npm run check:identity` / `npm run check:identity:neg:static` /
 `npm run check:shellcache` / `npm run check:shellcache:neg:static` /
 `npm run check:corner` / `npm run check:corner:neg` /
 `npm run check:import` / `npm run check:import:neg:static` /
 `npm run check:gallery` / `npm run check:gallery:neg:static`.
+
+`npm run audit:ux` is **not a guard** and never fails a build. It walks the
+flows a person takes -- the home page, the Gallery panel at both unlock tiers,
+each built-in example's title bar, an edit, the refusal surface, an offline
+reload -- and prints the *text* each surface renders, then grades what it found.
+It exists because a UX defect can pass every guard: the project-identity bug
+loaded, rendered, and ran, and only said the wrong circuit name. Two of its
+first findings were the audit's own mistakes, and both are written into it as
+comments: `requiresUnlock:!0` means **true** (reading it as `=== '1'` inverts
+every gate and calls a correct gate a missing list), and the `?example=<id>`
+deep link **re-seeds** the lab on every load by design, so a rename not
+surviving a reload is the loader doing its job rather than a persistence bug.
 
 `npm run bump:shellcache` rewrites `sw.js`'s cache constant from the artifact.
 Run it after any change to `site/`; check 13 fails the build if you forget.
@@ -104,6 +117,31 @@ every string of a working shim and kills the route anyway. Unlike the import pat
 this one does not grow anything the shell cache hashes, so it needs no token bump
 (see the C3 section below for what the shim does and what it deliberately does not).
 
+`npm run patch:identity` re-plays `scripts/example-identity.json`, in two parts.
+**Data**: three of the five built-in labs stored the project factory's placeholder
+identity (`id:project-main` / `name:New Circuit`) instead of their own. The title
+bar renders the project's own name, so a user who chose "Two-Stage Op Amp" read
+"New Circuit" as the circuit they were editing. Those three payloads now carry
+their catalog id and name. **Display**: `og()`, the single `id -> project`
+boundary the catalog resolves through, returned the stored name unchanged; it now
+overwrites it with the catalog's name, which is what the Gallery path already did
+(`u.entry?.name ?? d.name`). The two halves are checked independently — check 17
+reads the stored identity out of the chunk and refuses a placeholder, while
+`example-outcomes.mjs` drives the page and asserts the title bar shows the catalog
+name — so a data-only fix (resolver still able to pass a future payload's
+placeholder through) and a display-only fix (stored data still wrong) each fail on
+their own half. `example-identity.negctl.mjs` walks three mutations, including one
+that renames every payload to the *same* wrong string: a rule written as "differs
+from the catalog" would pass that tree, and the rendered-name assertion must not.
+
+This patch changes bytes in an early part of `App-*.js`, which shifts every byte
+offset after it — including the seven storage acceptances in
+`scripts/known-deviations.json`, whose keys are `rel@offset`. They were re-derived
+here too. That is the third time a patch has had to do this, which is why the
+offsets are worth replacing with a content-derived key; until then, any patch that
+grows this chunk owes the same re-derivation, and check 10 reports the drift as
+stale acceptances rather than silently.
+
 The process-corner sweep is **teaching-grade**: `tt`/`ss`/`ff` scale the
 Level-1 (Shichman–Hodges) parameters of `site/models/cmos.lib` by a made-up
 spread, so a student can see *which way* a bias point moves between corners.
@@ -129,6 +167,14 @@ orders of magnitude below the smallest corner shift. Both halves are pinned:
 check 14 (above) ties the advertised list to the emitter and the library, and
 `numeric-crosscheck.mjs` runs the three corners plus the frozen device set in
 the shipped engine.
+
+`npm run check:corner` selects those cases with `--only=corner_default,corner_ss,
+corner_ff,corner_frozen`. The two further corner claims —
+`corner_default_matches_frozen` and `corner_shifts_every_device` — are
+**cross-assertions** (they declare `needs:` and are evaluated whenever their
+prerequisites run), not named cases, so asking `--only` for them matched nothing
+and the harness exited 2. Naming only the four real cases runs the whole corner
+group: cases=6, assertions=15.
 
 Two more libraries ship in `site/models/` — `cap.lib` (role capacitors: `cout`,
 compensation, bypass, MIM/MOM tags) and `opamp.lib` (behavioural `opamp_se` /

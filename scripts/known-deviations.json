@@ -14,37 +14,37 @@
       "tracked": "P0-2 / A3"
     },
     {
-      "key": "storage-unguarded:assets/App-D0jgYDVz.js@672850",
+      "key": "storage-unguarded:assets/App-D0jgYDVz.js@673751",
       "reason": "All seven accepted unguarded storage reads are on the agent-relay session path: they pass bare `window.localStorage` into the relay's own helpers (Jy/qy/Yy), which call removeItem/setItem/getItem on it. Every one sits downstream of a guard on the relay flag (`if(!e.enabled)return`, `if(e.enabled)`) with the session object as the only key (`t.current`). `publicAgentUiEnabled` occurs exactly once in the whole artifact -- as Ux's own prop default `=!1` -- and no caller passes it, so `e.enabled` is false and these branches never execute here; the static Pages deploy also has no `/api/agent/sessions` backend (see docs/REPO_LAYOUT.md: the relay is a separate hosted service). They were deliberately left unpatched rather than hand-fixed: repairing them means rewriting session-token code that this environment cannot exercise end to end, which is a worse trade than a recorded, visible gap. The byte offsets are positions in the artifact as repaired by scripts/import-libs.json (which grows the chunk by 7653 bytes ahead of these sites); a rebuild or any further patch shifts them, at which point these entries go stale and check 10 reports the sites again for review -- which is the intended behaviour of an acceptance list, not a false alarm. It did exactly that when the import repair landed, and the offsets below were re-derived rather than re-used.",
       "tracked": "B9 / agent-relay"
     },
     {
-      "key": "storage-unguarded:assets/App-D0jgYDVz.js@672941",
+      "key": "storage-unguarded:assets/App-D0jgYDVz.js@673842",
       "reason": "same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here",
       "tracked": "B9 / agent-relay"
     },
     {
-      "key": "storage-unguarded:assets/App-D0jgYDVz.js@682312",
+      "key": "storage-unguarded:assets/App-D0jgYDVz.js@683213",
       "reason": "same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here",
       "tracked": "B9 / agent-relay"
     },
     {
-      "key": "storage-unguarded:assets/App-D0jgYDVz.js@682593",
+      "key": "storage-unguarded:assets/App-D0jgYDVz.js@683494",
       "reason": "same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here",
       "tracked": "B9 / agent-relay"
     },
     {
-      "key": "storage-unguarded:assets/App-D0jgYDVz.js@685534",
+      "key": "storage-unguarded:assets/App-D0jgYDVz.js@686435",
       "reason": "same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here",
       "tracked": "B9 / agent-relay"
     },
     {
-      "key": "storage-unguarded:assets/App-D0jgYDVz.js@686144",
+      "key": "storage-unguarded:assets/App-D0jgYDVz.js@687045",
       "reason": "same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here",
       "tracked": "B9 / agent-relay"
     },
     {
-      "key": "storage-unguarded:assets/App-D0jgYDVz.js@686523",
+      "key": "storage-unguarded:assets/App-D0jgYDVz.js@687424",
       "reason": "same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here",
       "tracked": "B9 / agent-relay"
     }

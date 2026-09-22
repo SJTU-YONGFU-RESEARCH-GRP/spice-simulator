@@ -2197,6 +2197,126 @@ function checkGalleryShim(site, manifestPath) {
   return out;
 }
 
+/**
+ * 17. built-in example project identity.
+ *
+ * The project factory is `function pl(e,t,n='document-main')`: it stamps the
+ * (id, name) its caller passes. Three of the five shipped labs stored the
+ * factory's placeholder identity (`project-main` / `New Circuit`) instead of
+ * their own, and the title bar renders the project's own name -- so a user who
+ * deliberately opened "Two-Stage Op Amp" read "New Circuit" as the circuit they
+ * were editing. scripts/example-identity.json repairs the stored identity and
+ * makes the catalog's name authoritative at the id -> project boundary.
+ *
+ * This check is the half that does not need a browser: it reads the catalog and
+ * each payload out of the shipped chunk and refuses a placeholder. The rendered
+ * half lives in scripts/example-outcomes.mjs, which drives the page and asserts
+ * the title bar shows the catalog name -- the two halves are independent, which
+ * is why agreement between them is evidence rather than a tautology. A
+ * data-only fix would leave the resolver able to hand a future payload's
+ * placeholder through; a resolver-only fix would leave the stored data wrong.
+ */
+function checkExampleIdentity(site) {
+  const out = { status: 'checked', examples: [], findings: [], notes: [] };
+
+  // Applicability gates on whether this tree DECLARES the feature (a catalog
+  // that binds project literals), not on whether the identity manifest exists.
+  // A tree without the catalog has no examples whose identity could be wrong;
+  // a tree with it and a payload still holding the placeholder is exactly the
+  // defect. Gating on the manifest instead would switch this check off on any
+  // tree that had not been repaired yet, which is when it is needed most.
+  const assetsDir = join(site, 'assets');
+  if (!existsSync(assetsDir)) {
+    out.status = 'absent';
+    out.notes.push('no assets/ directory in this tree');
+    return out;
+  }
+
+  const CATALOG_RE = /\{id:`([a-z0-9-]+)`,name:`([^`]*)`,description:`([^`]*)`,requiresUnlock:!(0|1),project:rg\(([\w$]+)\)\}/g;
+  let src = null, catalogFile = null, hits = null;
+  for (const f of readdirSync(assetsDir)) {
+    if (!f.endsWith('.js')) continue;
+    const text = readFileSync(join(assetsDir, f), 'utf8');
+    const m = [...text.matchAll(CATALOG_RE)];
+    if (!m.length) continue;
+    if (hits) {
+      out.status = 'vacuous';
+      out.findings.push({
+        key: 'example-catalog-duplicated', ref: f,
+        notes: ['the example catalog also appears in ' + catalogFile + ', so which one the product uses cannot be determined'],
+      });
+      return out;
+    }
+    src = text; catalogFile = f; hits = m;
+  }
+  if (!hits) {
+    out.status = 'absent';
+    out.notes.push('no built-in example catalog in this tree');
+    return out;
+  }
+
+  // The project literals sit in one `var A={...},B={...}` chain. Locate each
+  // bound variable's slice so the identity read here is the one the catalog
+  // entry actually points at, not a nearby payload.
+  const catalogStart = src.indexOf('{id:`' + hits[0][1] + '`,name:`');
+  const marks = hits.map((e) => {
+    const v = e[5];
+    const a = src.indexOf('var ' + v + '={');
+    const b = src.indexOf(',' + v + '={');
+    return { v, at: a >= 0 ? a : b };
+  }).sort((x, y) => x.at - y.at);
+  if (marks.some((m) => m.at < 0) || catalogStart < 0) {
+    out.status = 'vacuous';
+    out.findings.push({
+      key: 'example-catalog-unresolvable', ref: catalogFile,
+      notes: ['a catalog entry points at a project binder that could not be located, so its identity was not read'],
+    });
+    return out;
+  }
+
+  const PLACEHOLDER_ID = 'project-main';
+  const PLACEHOLDER_NAME = 'New Circuit';
+
+  for (let i = 0; i < marks.length; i++) {
+    const to = i + 1 < marks.length ? marks[i + 1].at : catalogStart;
+    const slice = src.slice(marks[i].at, to);
+    const entry = hits.find((e) => e[5] === marks[i].v);
+    if (!entry) continue;
+    const [catalogId, catalogName] = [entry[1], entry[2]];
+    const payload = /id:`([^`]*)`,name:`([^`]*)`?(?:,schemaVersion:\d+)?,simulationSetups:/.exec(slice);
+    const rec = {
+      catalogId, catalogName, var: marks[i].v,
+      payloadId: payload ? payload[1] : null,
+      payloadName: payload ? payload[2] : null,
+    };
+    out.examples.push(rec);
+
+    if (!payload) {
+      out.findings.push({
+        key: 'example-identity-unreadable', ref: catalogFile,
+        notes: ['example ' + catalogId + ' (binder ' + marks[i].v + ') has no readable project id/name before simulationSetups, so its identity cannot be checked'],
+      });
+      continue;
+    }
+    if (rec.payloadId === PLACEHOLDER_ID) {
+      out.findings.push({
+        key: 'example-identity-placeholder-id', ref: catalogFile,
+        notes: ['example ' + catalogId + ' still stores the project factory placeholder id ' + JSON.stringify(PLACEHOLDER_ID) +
+          ' (name ' + JSON.stringify(rec.payloadName) + '); the title bar renders the stored name, so the user reads a lab they did not open'],
+      });
+    }
+    if (rec.payloadName === PLACEHOLDER_NAME) {
+      out.findings.push({
+        key: 'example-identity-placeholder-name', ref: catalogFile,
+        notes: ['example ' + catalogId + ' still stores the project factory placeholder name ' + JSON.stringify(PLACEHOLDER_NAME) +
+          ' (id ' + JSON.stringify(rec.payloadId) + '); choosing this lab shows ' + JSON.stringify(PLACEHOLDER_NAME) + ' as the circuit name'],
+      });
+    }
+  }
+
+  return out;
+}
+
 function checkServiceWorkerCache(site) {
   const swPath = join(site, 'sw.js');
   if (!existsSync(swPath)) {
@@ -2486,6 +2606,7 @@ async function main() {
   const corner = checkCornerSweep(site, cornerPath);
   const importLibs = checkImportLibs(site, importPath);
   const gallery = checkGalleryShim(site, galleryPath);
+  const exampleIdentity = checkExampleIdentity(site);
   const jsxFactoryList = jsxFactory
     .filter((r) => r.failures.length > 0)
     .map((r) => ({
@@ -2506,7 +2627,7 @@ async function main() {
     escapedList, missingList, externalList, jsxList, shellList, jsxFactoryList,
     jsxSites.findings, egress.findings, storage.findings, csp.findings,
     swcache.findings, shellCache.findings, corner.findings, importLibs.findings,
-    gallery.findings,
+    gallery.findings, exampleIdentity.findings,
   ];
   for (const list of lists) {
     for (const f of list) {
@@ -2729,9 +2850,24 @@ async function main() {
       'answers only (writes no Cache Storage)');
   }
 
+  if (exampleIdentity.findings.length > 0) {
+    push('');
+    push('17. built-in example identity');
+    push(...render(exampleIdentity.findings, 'example identity findings', null, accepted));
+  } else if (exampleIdentity.status === 'checked') {
+    push('');
+    push('17. built-in example identity');
+    push('  ok  ' + exampleIdentity.examples.length + ' example(s) carry their own project id/name, ' +
+      'none stores the factory placeholder (project-main / New Circuit)');
+  } else {
+    push('');
+    push('17. built-in example identity');
+    push('  --  ' + exampleIdentity.notes.join('; '));
+  }
+
   if (stale.length > 0) {
     push('');
-    push('17. stale accepted deviations');
+    push('18. stale accepted deviations');
     push(...render(stale, 'accepted entries that matched nothing', null, () => false));
   }
 
@@ -2820,6 +2956,12 @@ async function main() {
         routes: gallery.routes,
         findings: gallery.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
         notes: gallery.notes,
+      },
+      exampleIdentity: {
+        status: exampleIdentity.status,
+        examples: exampleIdentity.examples,
+        findings: exampleIdentity.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
+        notes: exampleIdentity.notes,
       },
       outbound: {
         manifest: outboundPath,

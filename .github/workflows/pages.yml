@@ -140,6 +140,14 @@ jobs:
       # the unpatched tree -- and requires each to be named for its own reason.
       - name: Prove the static-gallery check is not vacuous (mutation test)
         run: node scripts/gallery-shim.negctl.mjs --static-only
+      # Check 17 (inside the artifact guard above) reads the example catalog and
+      # each payload out of the shipped chunk and refuses the project factory's
+      # placeholder identity. The rendered half -- that the title bar shows the
+      # catalog name -- needs a browser, so it runs in the smoke job below; this
+      # control covers the static half, where a payload keeping `project-main`
+      # must be named even though the resolver would mask it at runtime.
+      - name: Prove the example-identity check is not vacuous (mutation test)
+        run: node scripts/example-identity.negctl.mjs --static-only
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -312,5 +320,15 @@ jobs:
       # implying coverage it does not have.
       - name: Prove the static-gallery check is not vacuous (mutation test)
         run: node scripts/gallery-shim.negctl.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # The example-identity half a browser is needed for: the title bar must
+      # show the name the user picked in the catalog, not whatever the payload
+      # stored. Three mutations are walked -- a payload reverted to the
+      # placeholder, the resolver reverted to handing the stored name through,
+      # and every payload renamed to the SAME wrong string (which a
+      # "differs from the catalog" rule would pass and this one must not).
+      - name: Prove the example-identity check is not vacuous (browser mutation test)
+        run: node scripts/example-identity.negctl.mjs --require
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}

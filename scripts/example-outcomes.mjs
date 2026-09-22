@@ -176,6 +176,25 @@ function analyse(chunks) {
   return { catalogFile: cat.file, advertised, entries };
 }
 
+// The project factory in this build is `function pl(e,t,n='document-main')`:
+// it stamps whatever (id, name) its caller supplies. A payload that kept the
+// factory's placeholder identity names a lab the user did not open -- the title
+// bar renders the project's own name, so 'New Circuit' is what a user reads
+// after choosing 'Two-Stage Op Amp'. Three of the five payloads shipped that
+// way. The placeholder is the failure, so it is named here rather than inferred:
+// a check that only looked for a mismatch anywhere would pass on a tree where
+// every payload had been renamed to the same wrong string.
+const PLACEHOLDER_ID = 'project-main';
+const PLACEHOLDER_NAME = 'New Circuit';
+function identityOf(entry) {
+  const problems = [];
+  if (entry.payloadId === PLACEHOLDER_ID) problems.push('stored id is the factory placeholder ' + JSON.stringify(PLACEHOLDER_ID));
+  if (entry.payloadName === PLACEHOLDER_NAME) problems.push('stored name is the factory placeholder ' + JSON.stringify(PLACEHOLDER_NAME));
+  if (!entry.payloadId) problems.push('no project id could be read out of its payload');
+  if (!entry.payloadName) problems.push('no project name could be read out of its payload');
+  return { ok: problems.length === 0, problems };
+}
+
 const chunks = readChunks(SITE);
 if (chunks.error) {
   console.error('example-outcomes: SETUP ERROR -- ' + chunks.error);
@@ -268,6 +287,14 @@ const READY_JS = `({
   path: location.pathname + location.search,
   runButton: !!document.querySelector('button.simulation-run-button'),
   openedExample: /Opened example:/.test(document.body ? document.body.innerText : ''),
+  // The title bar names the open circuit through this control. Reading it is
+  // how the check tells whether the identity the payload stored reached the
+  // user, which is the whole point: the stored value is invisible until the
+  // product renders it.
+  circuitName: (function () {
+    const el = document.querySelector('input[data-testid=project-name-input]');
+    return el ? el.value : null;
+  })(),
   announced: [...document.querySelectorAll('[role=alert],[role=status],[aria-live]')].map((e) => (e.innerText || '').trim()).filter(Boolean).slice(0, 6),
   text: (document.body ? document.body.innerText : '').replace(/\\s+/g, ' ').slice(0, 200),
 })`;
@@ -445,6 +472,23 @@ try {
       continue;
     }
 
+    // The catalog name is what the user picked, so it is what the title bar must
+    // show. The stored identity is repaired by scripts/example-identity.json and
+    // the resolver now overwrites it from the catalog, so the two agree by
+    // construction -- this asserts the construction holds, on the rendered page
+    // rather than in the chunk, because a stored-only fix would leave the
+    // placeholder visible and a resolver-only fix would leave the data wrong.
+    rec.circuitName = ready.circuitName;
+    rec.staticIdentity = identityOf(entry);
+    if (!rec.staticIdentity.ok) {
+      fail(entry.id + ': its stored project identity is a placeholder: ' + rec.staticIdentity.problems.join('; ') +
+        ' (payload id=' + JSON.stringify(entry.payloadId) + ' name=' + JSON.stringify(entry.payloadName) + ')');
+    }
+    if (ready.circuitName !== entry.name) {
+      fail(entry.id + ': the title bar shows ' + JSON.stringify(ready.circuitName) + ' but the catalog entry the user opened is ' +
+        JSON.stringify(entry.name) + ' -- the name a user reads must be the one they chose');
+    }
+
     // Reveal the simulation surface if it is not already showing. When the
     // payload declares no setups there is nothing to wait for, so the deadline
     // is short: eight seconds of hoping is not a check.
@@ -473,6 +517,7 @@ try {
       if (surface.hasProfileSelect) fail(entry.id + ': declares no simulation setups, yet the surface shows a profile selector (' + JSON.stringify(surface.profileLabel) + ')');
       R.examples.push(rec);
       console.log('  ok  ' + entry.id.padEnd(44) + ' no-lab     runButton=' + surface.runButton + ' profileSelect=' + surface.hasProfileSelect +
+        ' identity=' + JSON.stringify(ready.circuitName) +
         '  (payload ' + JSON.stringify(entry.payloadId) + ')  ' + (Date.now() - t0) + 'ms');
       continue;
     }
@@ -553,6 +598,7 @@ try {
     console.log('  ' + (['completed', 'refused', 'no-lab'].includes(rec.outcome) ? 'ok  ' : 'BAD ') + entry.id.padEnd(44) + ' ' +
       String(rec.outcome).padEnd(10) + ' expected=' + entry.expectation.padEnd(8) +
       ' profile=' + JSON.stringify(surface.profileLabel) + ' warned=' + JSON.stringify(marks.map((m) => m.label)) +
+      ' identity=' + JSON.stringify(ready.circuitName) +
       ' svg=' + surface.svg + '->' + (observed ? observed.svg : '?') +
       ' code=' + JSON.stringify(observed ? observed.code : null) + ' stage=' + JSON.stringify(observed ? observed.stage : null) + '  ' + rec.ms + 'ms');
   }

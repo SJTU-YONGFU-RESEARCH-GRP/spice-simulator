@@ -18,6 +18,7 @@ example-outcomes-negctl-result.json
 shell-cache-negctl-result.json
 spice-import-result.json
 gallery-shim-result.json
+ux-audit-result.json
 
 # Legacy vanilla simulator (deleted from this repo)
 # NOTE: the leading "/" below is deliberate - those patterns are anchored to the
