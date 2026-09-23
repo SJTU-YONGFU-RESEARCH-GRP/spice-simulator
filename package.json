@@ -50,6 +50,13 @@
     "check:identity": "node scripts/check-artifacts.mjs && node scripts/example-outcomes.mjs",
     "check:identity:neg": "node scripts/example-identity.negctl.mjs",
     "check:identity:neg:static": "node scripts/example-identity.negctl.mjs --static-only",
+    "build:margin": "node scripts/stability-margin.manifest.cjs",
+    "patch:margin": "node scripts/patch-outbound.mjs --manifest=scripts/stability-margin.json",
+    "check:margin": "node scripts/check-artifacts.mjs && node scripts/stability-margin.oracle.mjs",
+    "check:margin:neg": "node scripts/stability-margin.negctl.mjs",
+    "check:margin:neg:static": "node scripts/stability-margin.negctl.mjs --static-only",
+    "check:margin:browser": "node scripts/stability-margin.mjs",
+    "check:margin:browser:fixture": "node scripts/stability-margin.mjs --fixture=center-magnitude",
     "audit:ux": "node scripts/ux-audit.mjs"
   }
 }

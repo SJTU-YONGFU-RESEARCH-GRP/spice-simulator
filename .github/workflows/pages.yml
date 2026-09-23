@@ -56,6 +56,17 @@ jobs:
       # thing it guards breaks".
       - name: Prove the numeric guard is not vacuous (mutation test)
         run: node scripts/numeric-crosscheck.negctl.mjs
+      # The cross-check above covers the engine's device models. This one covers a
+      # DERIVED quantity: the stability-margin evaluator is lifted back out of the
+      # shipped chunk and run against closed forms and an independently written
+      # crossing search. Its sharpest assertion is invariance under INVERSION --
+      # the same loop with an inverting stage must report the same margin -- which
+      # is what catches measuring the phase margin against absolute -180 instead of
+      # relative to the loop's own low-frequency phase. That defect was real, and
+      # it reported 275 degrees for an inverting stage while failing to notice the
+      # same loop going unstable by a full 180 degrees.
+      - name: Cross-check the stability margins against closed forms
+        run: node scripts/stability-margin.oracle.mjs
       # The guard above classifies every outbound target the artifact can reach
       # (scripts/outbound-manifest.json). That is a statement about text: a
       # repair that is present but inert -- a comparison that never runs -- would
@@ -148,6 +159,18 @@ jobs:
       # must be named even though the resolver would mask it at runtime.
       - name: Prove the example-identity check is not vacuous (mutation test)
         run: node scripts/example-identity.negctl.mjs --static-only
+      # Check 18 (inside the artifact guard above) reads the margin evaluator, the
+      # splice that calls it, BOTH variants of the artifact schema's closed metric
+      # enum, each record's own unit, the refusal shape, the five properties that
+      # make the number correct, the curve the plot draws, and the authoring tables
+      # the metrics must NOT appear in. This step breaks each of those in turn --
+      # including the half-applied enum that took this feature down the first time,
+      # where the rows are computed and then the result file carrying them is
+      # rejected whole, taking every other measurement with it -- and requires the
+      # guard to name each one for its own reason. The rendered half needs a
+      # browser and runs in the smoke job below.
+      - name: Prove the stability-margin check is not vacuous (mutation test)
+        run: node scripts/stability-margin.negctl.mjs --static-only
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -330,5 +353,43 @@ jobs:
       # "differs from the catalog" rule would pass and this one must not).
       - name: Prove the example-identity check is not vacuous (browser mutation test)
         run: node scripts/example-identity.negctl.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # The margin check's static half can prove the evaluator is correct and
+      # reachable; only a browser can prove the row it returns is DRAWN. That is
+      # not a formality here: the first version of this feature changed bytes,
+      # matched its shas, passed --check and passed the numeric oracle while the
+      # panel showed no measurements at all. This drives a built-in lab, runs it,
+      # and reads the two metrics off the rendered table -- requiring the row to be
+      # present, a number against the metric's OWN unit or a refusal that carries a
+      # reason, and the panel's own count to include it. What it deliberately does
+      # NOT claim is the number: the run's raw complex response never reaches the
+      # page, so it says so rather than deriving a second number from the same code
+      # and calling that agreement evidence.
+      - name: The stability margins reach the screen
+        run: node scripts/stability-margin.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # Every margin the shipped lab can produce is a REFUSAL: its AC response
+      # never reaches unity gain. So the run above exercises the refusal branch
+      # only, and the branch that reads a VALUE, splits it from its unit and
+      # checks that unit never executes -- a green that was measured on a code
+      # path nobody ran. This step serves a copy of the tree whose magnitude
+      # curves are centred on 0 dB so a crossing must exist, and requires an
+      # AVAILABLE row. The value is a fixture and this step claims only that a
+      # defined margin is drawn, under its own unit, and is counted by the panel.
+      - name: The stability margins reach the screen when one is defined
+        run: node scripts/stability-margin.mjs --require --fixture=center-magnitude
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # And prove that channel's own assertions are not vacuous. Two browser cases
+      # on top of the static set: the control must come back GREEN on the unmutated
+      # tree, or a red below would only prove the harness is broken; and a tree
+      # whose refusals stop carrying their reason must come back RED with that
+      # stated reason. The refusal is the branch the shipped content always takes
+      # -- its AC response never reaches unity gain -- so a control that never
+      # renders a refusal would control nothing.
+      - name: Prove the stability-margin check is not vacuous (browser mutation test)
+        run: node scripts/stability-margin.negctl.mjs --require
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}

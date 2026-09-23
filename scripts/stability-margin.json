@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "$comment": "Adds phase margin and gain margin to the automatic measurement summary: derived from the whole AC sweep, one pair of rows per complex output, alongside the existing minimum/maximum/peak-to-peak rows. Both rows are always emitted; when a margin is not defined the row says why rather than disappearing or reading zero.\nBoth margins are measured relative to the LOOP'S LOW-FREQUENCY PHASE (see $mechanism and the comments in scripts/stability-margin.evaluator.js), so an inverting and a non-inverting stage with the same poles report the same margin -- which is the physically correct answer, and the one that notices instability without needing an extra 180 degrees of lag.",
+  "$how": "node scripts/stability-margin.manifest.cjs        # regenerate after any upstream rebuild\nnode scripts/patch-outbound.mjs --manifest=scripts/stability-margin.json\n  --site=D  patch D instead of ./site (used to try the manifest on a copy first)\nThen, because site/ bytes changed: node scripts/shell-cache.mjs --write\nAnd verify, cheapest first:\n  node scripts/check-artifacts.mjs      # check 18, static\n  node scripts/stability-margin.oracle.mjs --site=D   # the numbers, from the shipped bytes\n  node scripts/stability-margin.negctl.mjs --site=D   # is check 18 vacuous?\n  node scripts/stability-margin.mjs --site=D          # is the row on the screen?\n  node scripts/stability-margin.mjs --fixture=center-magnitude\n    # and is the row DRAWN when a margin actually exists? Every margin this lab\n    # can produce on the shipped tree is a refusal, so without the fixture the\n    # value-vs-unit branch of that harness never executes.",
+  "$shape": "margin-evaluator and margin-splice are INSERTIONS (the find text survives inside the replace). margin-schema-available and margin-schema-unavailable are SUBSTITUTIONS (the find text does not survive). For an insertion the \"already applied\" test is the marker, not the find, which survives by construction.",
+  "$mechanism": "The executor builds the evaluated-output artifact and hands it to the client, which validates it against a zod schema before drawing anything. Three separate closed lists decide whether a new metric can exist at all:\n  1. the ARTIFACT SCHEMA metric enum (files-DP-BVVb4.js). A metric missing here fails validation, the artifact is discarded, and the panel shows \"Full result files are unavailable or invalid\" -- the user loses the result they already had.\n  2. the record factory already in the executor, which computes every automatic summary row.\n  3. the setup picker (the `ne` label table and the AC branch of `D`), which governs AUTHORED measurements and is deliberately NOT touched: the setup schema's method union is closed as well, so listing a metric there without implementing the authored path offers the user an option that cannot be used.\nA margin is a property of the whole frequency response, so it belongs in group 1+2 as an automatic row, not in group 3 as a rule the user writes.",
+  "contract": {
+    "$why": "What check 18 in scripts/check-artifacts.mjs looks for. Every list that gates whether these rows can reach the screen appears here; a needle for the evaluator alone is what let the first version pass while the artifact failed validation.",
+    "executorFile": "assets/src-CMkpkg0p.js",
+    "surfaceFile": "assets/spice-simulation-surface-Dua32hSB.js",
+    "schemaFile": "assets/files-DP-BVVb4.js",
+    "autoSummaryAnchor": "function Xe(e){let t=[];",
+    "marginFunction": "function smMargins(e){let t=[];",
+    "marginSplice": "measurements:[...Xe(c),...smMargins(c),...nt(c,r)]",
+    "phaseMarginMetric": "phase-margin",
+    "gainMarginMetric": "gain-margin",
+    "phaseMarginUnit": "deg",
+    "gainMarginUnit": "dB",
+    "phaseMarginEmit": "smRecord(n,e,i,`phase-margin`,`Phase margin`,`deg`,p,h,m)",
+    "gainMarginEmit": "smRecord(n,e,i,`gain-margin`,`Gain margin`,`dB`,f,y,v)",
+    "surfacePhaseExpr": "phaseDeg:Math.atan2(n,t)*180/Math.PI",
+    "surfaceMagnitudeExpr": "magnitudeDb:20*Math.log10(Math.max(r,1e-30))",
+    "phaseFormulaNeedle": "Math.atan2(n,t)*180/Math.PI",
+    "magnitudeFormulaNeedle": "20*Math.log10(Math.max(Math.hypot(t,n),1e-30))",
+    "crossingNeedle": "function smCross(",
+    "levelTestNeedle": "if((a-n)*(o-n)<0){",
+    "unwrapNeedle": "function smUnwrap(",
+    "staticPhaseNeedle": "function smStatic(",
+    "phaseReferenceNeedle": "p=180+t-z",
+    "acOnlyNeedle": "if(e.analysis!==`ac`)return;",
+    "evidenceShapeNeedle": "evidence:{kind:`point`,coordinate:",
+    "schemaMetricEnum": "metric:t([`operating-point`,`minimum`,`maximum`,`peak-to-peak`,`time-mean`,`time-rms`,`sample-at`])",
+    "schemaMetricEnumPatched": "metric:t([`operating-point`,`minimum`,`maximum`,`peak-to-peak`,`time-mean`,`time-rms`,`sample-at`,`phase-margin`,`gain-margin`])",
+    "schemaEnumOccurrences": 2,
+    "recordFactoryNeedle": "function smRecord(",
+    "unavailableNeedle": "return{...u,status:`unavailable`,reason:s}"
+  },
+  "targets": [
+    "assets/src-CMkpkg0p.js",
+    "assets/files-DP-BVVb4.js"
+  ],
+  "repairs": [
+    {
+      "id": "margin-evaluator",
+      "file": "assets/src-CMkpkg0p.js",
+      "why": "Injects the margin evaluator next to the existing automatic summary builder, so the new rows are produced by the same code path that already computes minimum, maximum and peak to peak.",
+      "marker": "function smMargins(e){let t=[];",
+      "requires": "function Xe(e){let t=[];",
+      "edits": [
+        {
+          "find": "function Xe(e){let t=[];",
+          "replace": "function smCross(e,t,n){let r=[];for(let i=1;i<Math.min(e.length,t.length);i++){let a=t[i-1],o=t[i],s=e[i-1],c=e[i];if(!Number.isFinite(a)||!Number.isFinite(o)||!Number.isFinite(s)||!Number.isFinite(c))continue;if(a===n){r.push({x:s,i:i});continue}if((a-n)*(o-n)<0){let e=(n-a)/(o-a);r.push({x:s+(c-s)*e,i:i})}}return r}\nfunction smInterp(e,t,n){for(let r=1;r<Math.min(e.length,t.length);r++){let i=t[r-1],a=t[r],o=e[r-1],s=e[r];if(!Number.isFinite(i)||!Number.isFinite(a)||!Number.isFinite(o)||!Number.isFinite(s))continue;if(o<=n&&n<=s){let e=s===o?0:(n-o)/(s-o);return i+(a-i)*e}}return null}\nfunction smUnwrap(e){let t=[],n=null;for(let r of e){if(r==null||!Number.isFinite(r)){t.push(null);continue}let e=r;if(n!=null){for(;e-n>180;)e-=360;for(;e-n<-180;)e+=360}n=e;t.push(e)}return t}\nfunction smStatic(e){for(let t of e)if(t!=null&&Number.isFinite(t))return Math.round(t/180)*180;return 0}\nfunction smPassed(e,t,n){for(let r=0;r<Math.min(t,e.length);r++){let i=e[r];if(i!=null&&i<=n)return!0}return!1}\nfunction smMargins(e){let t=[];return e.forEach((e,n)=>{if(e.analysis!==`ac`)return;let r=e.domain?.values??[];if(!r.length)return;for(let i of e.outputs){if(!i.imaginary)continue;let a=i.values,o=i.imaginary,s=a.length,c=[],l=[];for(let e=0;e<s;e++){let t=a[e],n=o[e];c.push(t==null||n==null?null:20*Math.log10(Math.max(Math.hypot(t,n),1e-30)));l.push(t==null||n==null?null:Math.atan2(n,t)*180/Math.PI)}let w=smUnwrap(l),z=smStatic(w),q=z-180,u=null;for(let e=0;e<r.length;e++){if(!Number.isFinite(r[e])||r[e]<=0){u=null;break}u=u||[];u.push(Math.log10(r[e]))}let d=u?smCross(u,c,0):[],p=null,m=null,h=null;if(!u)h=`The frequency axis contains a non-positive sample, so the sweep cannot be interpreted`;else if(d.length===0)h=`The response never crosses 0 dB, so no unity-gain frequency exists`;else if(d.length>1)h=`The response crosses 0 dB ${d.length} times, so the phase margin is ambiguous`;else{let e=d[0],t=smInterp(u,w,e.x);if(t==null)h=`No finite samples bracket the 0 dB crossing`;else if(smPassed(w,e.i,q))h=`The phase has already passed ${q} degrees below the 0 dB crossing, so the loop is unstable and a phase margin is not defined`;else{p=180+t-z;m=e.x}}let g=u?smCross(u,w,q):[],f=null,v=null,y=null;if(!u)y=h;else if(g.length===0)y=`The phase never reaches ${q} degrees, so the gain margin is undefined`;else if(g.length>1)y=`The phase reaches ${q} degrees ${g.length} times, so the gain margin is ambiguous`;else{let e=g[0],t=smInterp(u,c,e.x);if(t==null)y=`No finite samples bracket the ${q} degree crossing`;else{f=-t;v=e.x}}t.push(smRecord(n,e,i,`phase-margin`,`Phase margin`,`deg`,p,h,m),smRecord(n,e,i,`gain-margin`,`Gain margin`,`dB`,f,y,v))}}),t}\nfunction smRecord(e,t,n,r,i,a,o,s,c){let l=o!=null&&Number.isFinite(o);let u={id:`${e}:${n.id}:${r}`,analysisIndex:e,analysis:t.analysis,plotName:t.plotName,outputId:n.id,outputLabel:n.label,metric:r,label:i,unit:a,origin:`automatic`};if(!l)return{...u,status:`unavailable`,reason:s};return{...u,status:`available`,value:o,...(c!=null&&Number.isFinite(c)?{evidence:{kind:`point`,coordinate:Math.pow(10,c)}}:{})}}function Xe(e){let t=[];"
+        }
+      ]
+    },
+    {
+      "id": "margin-splice",
+      "file": "assets/src-CMkpkg0p.js",
+      "why": "Wires the evaluator into the measurement list. An injection that defines a function without calling it changes bytes and behaviour by nothing, so the splice is what makes the evaluator reachable. The find text does not survive; the marker is the spliced form.",
+      "marker": "...smMargins(c),",
+      "requires": "...Xe(c),",
+      "edits": [
+        {
+          "find": "measurements:[...Xe(c),...nt(c,r)]",
+          "replace": "measurements:[...Xe(c),...smMargins(c),...nt(c,r)]"
+        }
+      ]
+    },
+    {
+      "id": "margin-schema-available",
+      "file": "assets/files-DP-BVVb4.js",
+      "why": "The available variant of the result-measurement schema. Without this member the artifact fails validation and the whole result is discarded, which is a regression: the rows are computed, then the payload that carries them is rejected.",
+      "marker": "metric:t([`operating-point`,`minimum`,`maximum`,`peak-to-peak`,`time-mean`,`time-rms`,`sample-at`,`phase-margin`,`gain-margin`]),label:r(),unit:r(),origin:t([`automatic`,`authored`]).optional(),measurementId:C.optional(),evidence:m([f({kind:d(`point`),coordinate:i()}),f({kind:d(`window`),start:i(),stop:i()})]).optional(),status:d(`available`)",
+      "requires": ",label:r(),unit:r(),origin:t([`automatic`,`authored`]).optional(),measurementId:C.optional(),evidence:m([f({kind:d(`point`),coordinate:i()}),f({kind:d(`window`),start:i(),stop:i()})]).optional(),status:d(`available`),value:i().finite()})",
+      "edits": [
+        {
+          "find": "metric:t([`operating-point`,`minimum`,`maximum`,`peak-to-peak`,`time-mean`,`time-rms`,`sample-at`]),label:r(),unit:r(),origin:t([`automatic`,`authored`]).optional(),measurementId:C.optional(),evidence:m([f({kind:d(`point`),coordinate:i()}),f({kind:d(`window`),start:i(),stop:i()})]).optional(),status:d(`available`),value:i().finite()})",
+          "replace": "metric:t([`operating-point`,`minimum`,`maximum`,`peak-to-peak`,`time-mean`,`time-rms`,`sample-at`,`phase-margin`,`gain-margin`]),label:r(),unit:r(),origin:t([`automatic`,`authored`]).optional(),measurementId:C.optional(),evidence:m([f({kind:d(`point`),coordinate:i()}),f({kind:d(`window`),start:i(),stop:i()})]).optional(),status:d(`available`),value:i().finite()})"
+        }
+      ]
+    },
+    {
+      "id": "margin-schema-unavailable",
+      "file": "assets/files-DP-BVVb4.js",
+      "why": "The unavailable variant, which repeats the enum. A margin that is not defined still has to pass validation on its way to the panel, or the refusal never reaches the user.",
+      "marker": "metric:t([`operating-point`,`minimum`,`maximum`,`peak-to-peak`,`time-mean`,`time-rms`,`sample-at`,`phase-margin`,`gain-margin`]),label:r(),unit:r(),origin:t([`automatic`,`authored`]).optional(),measurementId:C.optional(),evidence:m([f({kind:d(`point`),coordinate:i()}),f({kind:d(`window`),start:i(),stop:i()})]).optional(),status:d(`unavailable`)",
+      "requires": ",label:r(),unit:r(),origin:t([`automatic`,`authored`]).optional(),measurementId:C.optional(),evidence:m([f({kind:d(`point`),coordinate:i()}),f({kind:d(`window`),start:i(),stop:i()})]).optional(),status:d(`unavailable`),reason:r()})",
+      "edits": [
+        {
+          "find": "metric:t([`operating-point`,`minimum`,`maximum`,`peak-to-peak`,`time-mean`,`time-rms`,`sample-at`]),label:r(),unit:r(),origin:t([`automatic`,`authored`]).optional(),measurementId:C.optional(),evidence:m([f({kind:d(`point`),coordinate:i()}),f({kind:d(`window`),start:i(),stop:i()})]).optional(),status:d(`unavailable`),reason:r()})",
+          "replace": "metric:t([`operating-point`,`minimum`,`maximum`,`peak-to-peak`,`time-mean`,`time-rms`,`sample-at`,`phase-margin`,`gain-margin`]),label:r(),unit:r(),origin:t([`automatic`,`authored`]).optional(),measurementId:C.optional(),evidence:m([f({kind:d(`point`),coordinate:i()}),f({kind:d(`window`),start:i(),stop:i()})]).optional(),status:d(`unavailable`),reason:r()})"
+        }
+      ]
+    }
+  ]
+}

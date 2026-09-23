@@ -183,6 +183,7 @@ function parseArgs(argv) {
   const out = {
     site: join(REPO_ROOT, 'site'), base: null, strict: false, json: null, accept: null,
     outbound: null, csp: null, precache: null, corner: null, import: null, gallery: null,
+    margin: null,
   };
   for (const arg of argv) {
     // An empty value would silently resolve to the current directory and scan
@@ -198,6 +199,7 @@ function parseArgs(argv) {
     else if (arg.startsWith('--corner=')) out.corner = resolve(REPO_ROOT, arg.slice('--corner='.length));
     else if (arg.startsWith('--import=')) out.import = resolve(REPO_ROOT, arg.slice('--import='.length));
     else if (arg.startsWith('--gallery=')) out.gallery = resolve(REPO_ROOT, arg.slice('--gallery='.length));
+    else if (arg.startsWith('--margin=')) out.margin = resolve(REPO_ROOT, arg.slice('--margin='.length));
     else if (arg.startsWith('--json=')) out.json = arg.slice('--json='.length);
     else return { error: 'unknown argument: ' + arg };
   }
@@ -2317,6 +2319,387 @@ function checkExampleIdentity(site) {
   return out;
 }
 
+/**
+ * 18. stability margins (phase margin / gain margin).
+ *
+ * The Bode plot already carries every quantity a stability margin is made of:
+ * an AC output is stored as a pair of arrays (values, imaginary), and the
+ * plotting layer already derives magnitudeDb and phaseDeg from exactly those
+ * two arrays. What the product never did was read a margin off them -- the user
+ * could see the curve cross 0 dB and had to estimate the phase there by eye.
+ * scripts/stability-margin.json adds the two readings as automatic
+ * measurements.
+ *
+ * Five claims. The first three are structural, and the third is the one whose
+ * failure is silent and total:
+ *
+ *   1. The evaluator is present (marker occurs exactly once).
+ *
+ *   2. It is CALLED, not merely defined. This is the shape that has bitten this
+ *      repository before: the definitions land, the bytes and hashes change,
+ *      --check reports success, and behaviour is byte-for-byte identical
+ *      because nothing ever invokes them. So the splice expression is asserted
+ *      as a call shape, not as a set of names being present.
+ *
+ *   3. The two new metric names are members of the CLOSED metric enum in the
+ *      artifact schema, in BOTH the available and the unavailable variant. A
+ *      schema that enumerates its metrics rejects any result file carrying an
+ *      unknown one, and it rejects the file WHOLE: the panel then falls back to
+ *      "Full result files are unavailable or invalid" and every measurement
+ *      disappears, not just the margin. So the symptom of this mistake is a
+ *      build that looks broken, which is how it was found -- by comparing the
+ *      patched tree against the unpatched one at runtime, not by reading code.
+ *      The enum is written twice because an undefined margin still travels
+ *      through the unavailable variant on its way to the panel.
+ *
+ *   4. The evaluator keeps the five properties that make the number correct.
+ *      Each of these was a real defect on the way here, and each fails as a
+ *      plausible-looking number rather than as a crash:
+ *        - the phase is UNWRAPPED before use (else the +/-180 wrap reads as a
+ *          360 degree jump),
+ *        - crossings are found against a LEVEL, not against zero (a sign test
+ *          reads the wrap as a crossing and reports a gain margin for a phase
+ *          that merely passed through 0),
+ *        - the phase margin is measured relative to the loop's OWN static phase
+ *          (against absolute -180 an inverting loop reads 275 degrees, and its
+ *          instability is missed by a full 180),
+ *        - only AC analyses qualify (a noise analysis has no loop),
+ *        - `evidence` is the schema's own aggregate, not an invented shape.
+ *
+ *   5. The metrics do NOT appear in the AUTHORING tables in the surface chunk.
+ *      That is a decision, asserted so it cannot be undone by accident: margin
+ *      is automatic-only. The setup editor validates its own method kind
+ *      against a closed union with no margin member, so offering the option
+ *      would let a user save a setup the authoring schema cannot build -- an
+ *      option that is offered and then fails. This rule is what makes a
+ *      "helpful" re-add show up.
+ *
+ * On the shape of the metric tests: the schema members are counted as exact
+ * occurrences of the patched enum, and the authoring leak is tested as a quoted
+ * object KEY rather than as a substring. That distinction was earned -- a
+ * substring test on this very check stayed green when a key was renamed,
+ * because the identifier still occurred elsewhere in the file.
+ *
+ * Numerics are not re-derived here. scripts/stability-margin.oracle.mjs
+ * extracts this evaluator from the shipped bytes and checks it against closed
+ * forms and an independently written crossing search;
+ * scripts/stability-margin.mjs drives the panel in a browser and reads the
+ * rendered ROWS, which is the one claim this check cannot make -- that what it
+ * verified is actually drawn. This check is the static half: it is cheap, it
+ * never opens a browser, and it fails loudly if the evaluator was defined but
+ * the splice, the schema member or one of the five properties above was lost.
+ * scripts/stability-margin.negctl.mjs breaks each of them in turn and requires
+ * this check to say the specific thing it is supposed to say.
+ */
+function checkStabilityMargin(site, manifestPath) {
+  const out = { status: 'checked', metrics: [], findings: [], notes: [] };
+  if (!manifestPath) {
+    out.status = 'absent';
+    out.notes.push('no stability-margin manifest (pass --margin=<file> to enable this check)');
+    return out;
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  } catch (e) {
+    out.status = 'absent';
+    out.notes.push('cannot read the stability-margin manifest: ' + e.message);
+    return out;
+  }
+  const contract = manifest.contract ?? {};
+  const repairs = manifest.repairs ?? [];
+  const executorRel = contract.executorFile;
+  const surfaceRel = contract.surfaceFile;
+  const schemaRel = contract.schemaFile;
+  const ref = slash(manifestPath.slice(REPO_ROOT.length + 1));
+  if (!executorRel || !surfaceRel || !schemaRel || !repairs.length || !contract.marginFunction || !contract.autoSummaryAnchor) {
+    // A manifest whose contract does not describe a verifiable repair would let
+    // every rule below pass while checking nothing, and it would print "ok" --
+    // which is the failure mode this guard exists for. So this is a finding,
+    // not a quiet 'absent'.
+    out.status = 'vacuous';
+    out.findings.push({
+      key: 'margin-contract-vacuous', ref,
+      notes: ['the manifest declares no usable stability-margin contract (executorFile, surfaceFile, schemaFile, marginFunction, autoSummaryAnchor, repairs), so nothing here would be verified'],
+    });
+    return out;
+  }
+
+  const pathOf = (rel) => join(site, String(rel).split('/').join('\\'));
+  const executorPath = pathOf(executorRel);
+  const surfacePath = pathOf(surfaceRel);
+  const schemaPath = pathOf(schemaRel);
+
+  // A tree missing a chunk this check reads is not a tree that fails the check
+  // -- it is a tree the check cannot speak about. Reporting the missing file as
+  // a finding would make this check fire on every synthetic two-file tree the
+  // OTHER negative controls build, which is the cross-noise rule 17 forbids.
+  // The gate that decides "is this the product at all" is the automatic summary
+  // builder below; the rest is only "can I read what I need".
+  for (const [rel, p] of [[executorRel, executorPath], [surfaceRel, surfacePath], [schemaRel, schemaPath]]) {
+    if (!existsSync(p)) {
+      out.status = 'absent';
+      out.notes.push('no ' + rel + ' in this tree');
+      return out;
+    }
+  }
+  const executor = readFileSync(executorPath, 'utf8');
+  const surface = readFileSync(surfacePath, 'utf8');
+  const schema = readFileSync(schemaPath, 'utf8');
+
+  // Applicability. The gate is whether this tree DECLARES the feature -- it
+  // builds its automatic measurement summaries in the executor -- not whether
+  // the manifest exists, not whether the margin function is already there, and
+  // not whether some file this check happens to like is missing. Gating on the
+  // margin function would switch the check off in precisely the state it exists
+  // to catch: an artifact whose margin code was dropped. The anchor survives
+  // patching (the evaluator is injected in front of it), so it is the same
+  // declaration in a patched and an unpatched tree.
+  if (!executor.includes(String(contract.autoSummaryAnchor))) {
+    out.status = 'absent';
+    out.notes.push('this tree carries no automatic measurement builder, so it has no summary list for a margin to join');
+    return out;
+  }
+
+  const count = (text, needle) => {
+    let n = 0;
+    let at = 0;
+    for (;;) {
+      const i = text.indexOf(needle, at);
+      if (i === -1) return n;
+      n += 1;
+      at = i + needle.length;
+    }
+  };
+
+  // --- 1. every repair is present, marker exactly once ----------------------
+  for (const repair of repairs) {
+    const label = repair.id ?? '(unnamed)';
+    const rel = String(repair.file);
+    const file = join(site, rel.split('/').join('\\'));
+    if (!existsSync(file)) {
+      out.findings.push({
+        key: 'margin-repair-file-absent:' + label, ref: rel,
+        notes: ['the file this repair edits is not in this tree'],
+      });
+      continue;
+    }
+    const text = readFileSync(file, 'utf8');
+    const markers = repair.marker ? [repair.marker] : (repair.edits ?? []).map((e) => e.marker).filter(Boolean);
+    if (!markers.length) {
+      out.findings.push({
+        key: 'margin-repair-unmarked:' + label, ref: rel,
+        notes: ['the repair declares no marker, so its presence cannot be established from the artifact'],
+      });
+      continue;
+    }
+    for (const marker of markers) {
+      const n = count(text, marker);
+      if (n !== 1) {
+        out.findings.push({
+          key: 'margin-repair-missing:' + label, ref: rel,
+          notes: ['marker ' + JSON.stringify(marker) + ' occurs ' + n + ' time(s); expected exactly 1',
+            'without it the Bode plot still draws, but no margin is ever reported beside it'],
+        });
+      }
+    }
+  }
+
+  // --- 2. the evaluator is CALLED ------------------------------------------
+  //
+  // The splice expression names the margin function between the automatic
+  // summaries and the authored rules. Testing the whole expression rather than
+  // the function name is the point: a definition that nothing invokes changes
+  // the bytes and changes no behaviour.
+  const marginFn = String(contract.marginFunction);
+  const fnName = /function\s+([\w$]+)\s*\(/.exec(marginFn)?.[1] ?? null;
+  if (!executor.includes(marginFn)) {
+    out.findings.push({
+      key: 'margin-evaluator-absent', ref: executorRel,
+      notes: ['the evaluator entry point ' + JSON.stringify(marginFn) + ' is not defined in the artifact, so no margin is computed'],
+    });
+  } else if (!fnName) {
+    out.findings.push({
+      key: 'margin-evaluator-unparsable', ref: executorRel,
+      notes: ['the declared entry point is not in the shape this check reads, so its call site cannot be derived'],
+    });
+  } else {
+    const splice = String(contract.marginSplice ?? '');
+    if (!splice) {
+      out.findings.push({
+        key: 'margin-splice-undeclared', ref: executorRel,
+        notes: ['the manifest declares an evaluator but no splice expression, so nothing establishes that it is invoked'],
+      });
+    } else if (!executor.includes(splice)) {
+      out.findings.push({
+        key: 'margin-splice-missing', ref: executorRel,
+        notes: ['the splice ' + JSON.stringify(splice) + ' is absent: the evaluator is defined and never called, so the measurement list is unchanged',
+          'this is a definition-only patch -- bytes and hashes differ while the reported measurements do not'],
+      });
+    }
+  }
+
+  // --- 3. the metrics pass the artifact schema ------------------------------
+  //
+  // The load-bearing agreement, and the only one whose failure takes the whole
+  // panel down with it. The schema enumerates the metric names it accepts and
+  // is written TWICE -- once for the available variant and once for the
+  // unavailable one -- so both have to carry the new members. A margin that is
+  // refused still travels through the unavailable variant on its way to the
+  // panel, so extending only the first would break every refusal.
+  const enumPatched = String(contract.schemaMetricEnumPatched ?? '');
+  const enumBase = String(contract.schemaMetricEnum ?? '');
+  const wantEnums = Number(contract.schemaEnumOccurrences ?? 2);
+  if (!enumPatched) {
+    out.findings.push({
+      key: 'margin-schema-enum-undeclared', ref,
+      notes: ['the manifest declares no patched metric enum, so nothing establishes that the new metrics are admissible to the result schema'],
+    });
+  } else {
+    const got = count(schema, enumPatched);
+    if (got !== wantEnums) {
+      out.findings.push({
+        key: 'margin-schema-enum:' + got + '-of-' + wantEnums, ref: schemaRel,
+        notes: ['the patched metric enum occurs ' + got + ' time(s); expected exactly ' + wantEnums + ' (one per schema variant)',
+          'the schema rejects any result file carrying a metric it does not enumerate, and it rejects the file WHOLE,',
+          'so this is not a missing margin row: it is every measurement disappearing behind',
+          '"Full result files are unavailable or invalid"'],
+      });
+    }
+    if (enumBase && count(schema, enumBase) !== 0) {
+      out.findings.push({
+        key: 'margin-schema-enum-unpatched', ref: schemaRel,
+        notes: ['the pre-patch metric enum still occurs in this schema, so at least one variant was left unextended: ' + JSON.stringify(enumBase)],
+      });
+    }
+  }
+
+  // --- 4. the metrics are emitted with the right shape ----------------------
+  //
+  // The emit call pins the metric, the label and the unit in one needle. The
+  // unit matters on its own: the record factory's default is the output's unit
+  // (a volt or an amp), so a margin that inherits it renders as "90.57 V" --
+  // populated, and wrong.
+  for (const kind of ['phase', 'gain']) {
+    const metric = String(contract[kind + 'MarginMetric'] ?? '');
+    const unit = String(contract[kind + 'MarginUnit'] ?? '');
+    const emit = String(contract[kind + 'MarginEmit'] ?? '');
+    if (!metric) continue;
+    out.metrics.push({ metric, unit });
+    if (!emit) {
+      out.findings.push({
+        key: 'margin-emit-undeclared:' + metric, ref,
+        notes: ['the manifest declares no emit call for ' + JSON.stringify(metric) + ', so its metric/label/unit cannot be confirmed'],
+      });
+    } else if (!executor.includes(emit)) {
+      out.findings.push({
+        key: 'margin-emit-missing:' + metric, ref: executorRel,
+        notes: ['no record is emitted as ' + JSON.stringify(emit),
+          'the spelling of the metric, its label and its unit is part of the contract: a rename of any of the three changes what the panel says, and the unit defaults to the output unit (volts or amps) if it is dropped'],
+      });
+    }
+  }
+
+  // --- 5. the evaluator keeps the properties that make the number correct ----
+  //
+  // Each of these was a real defect on the way here, and each fails as a
+  // plausible-looking number rather than as a crash -- 275 degrees of phase
+  // margin on a loop that is in fact unstable, or a gain margin quoted for a
+  // phase that only passed through 0 degrees.
+  const properties = [
+    ['crossing-search', contract.crossingNeedle, 'the crossing search is gone, so no margin can be read off the curves'],
+    ['phase-formula', contract.phaseFormulaNeedle,
+      'the margin has to be derived from the same phase the plot draws (atan2 of the imaginary over the real part, in degrees)'],
+    ['magnitude-formula', contract.magnitudeFormulaNeedle,
+      'the margin has to be derived from the same magnitude the plot draws (20 log10, with the same clamp floor), or the margin belongs to a different curve than the one on screen'],
+    ['level-test', contract.levelTestNeedle,
+      'crossings have to be found against a LEVEL, not against zero: a sign test reads the +/-180 wrap as a crossing and reports a gain margin for a phase that only passed through 0 degrees'],
+    ['unwrap', contract.unwrapNeedle,
+      'the phase has to be unwrapped before use, or the +/-180 wrap reads as a 360 degree jump and every later comparison is meaningless'],
+    ['static-phase', contract.staticPhaseNeedle,
+      'the loop\'s own static phase has to be derived, because that is what the margin is measured relative to'],
+    ['phase-reference', contract.phaseReferenceNeedle,
+      'the phase margin has to be measured relative to the loop\'s own static phase: against absolute -180 an inverting loop reads 180 degrees high and its instability is missed by a full 180'],
+    ['ac-only', contract.acOnlyNeedle,
+      'only an AC analysis has a loop; a noise analysis must not produce margins'],
+    ['evidence-shape', contract.evidenceShapeNeedle,
+      'evidence has to be the schema\'s own aggregate, not an invented shape, or the record fails validation'],
+    ['record-factory', contract.recordFactoryNeedle,
+      'the record factory is gone, so neither row of a margin pair can be built'],
+    ['refusal-record', contract.unavailableNeedle,
+      'a margin that cannot be defined has to be emitted as an unavailable record carrying the reason it was given -- never as a missing row, never as a zero, and never as a row that renders "Unavailable" and stops there'],
+  ];
+  for (const [label, needle, why] of properties) {
+    const text = String(needle ?? '');
+    if (!text) {
+      out.findings.push({
+        key: 'margin-property-undeclared:' + label, ref,
+        notes: ['the manifest declares no needle for the ' + label + ' property, so it cannot be confirmed from the artifact'],
+      });
+    } else if (!executor.includes(text)) {
+      out.findings.push({
+        key: 'margin-property-missing:' + label, ref: executorRel,
+        notes: [why + '; expected ' + JSON.stringify(text)],
+      });
+    }
+  }
+
+  // --- 6. the metrics are offered for AUTHORING nowhere ---------------------
+  //
+  // A negative claim, and a deliberate one: margin is automatic-only. The setup
+  // editor validates its method kind against a closed union that has no margin
+  // member, so an entry in these tables would let a user build a setup the
+  // authoring schema cannot load -- an option that is offered and then fails.
+  // Only a POSITIVE sighting is reported, so a surface whose tables cannot be
+  // read produces no finding about a leak that cannot exist.
+  const kindTable = /ne=\{([^}]*)\};/.exec(surface);
+  const selector = /function\s+D\(e\)\{[^}]*\}/.exec(surface);
+  for (const kind of ['phase', 'gain']) {
+    const metric = String(contract[kind + 'MarginMetric'] ?? '');
+    if (!metric || (!kindTable && !selector)) continue;
+    const inKinds = kindTable ? kindTable[1].includes('"' + metric + '":') : false;
+    const inSelector = selector ? selector[0].includes('`' + metric + '`') : false;
+    if (inKinds || inSelector) {
+      out.findings.push({
+        key: 'margin-authoring-leak:' + metric, ref: surfaceRel,
+        notes: ['the authoring tables in this chunk offer ' + JSON.stringify(metric) +
+          ' (label table: ' + inKinds + ', method selector: ' + inSelector + ')',
+          'the setup editor validates against a closed method union with no margin member, so a setup built from this option cannot be loaded',
+          'margin is automatic-only by design; the automatic path is what makes it reachable'],
+      });
+    }
+  }
+
+  // --- 7. the plot still draws the curve the margin is measured on ----------
+  //
+  // phaseDeg and magnitudeDb are computed by the surface chunk, once per point,
+  // for the Bode plot. The evaluator computes the same two quantities from the
+  // same two arrays for the margin. Nothing shares code between them, so a
+  // change to either one moves the margin off the curve the user is reading,
+  // and the failure is a plausible-looking number rather than an error. Section
+  // 4 pins the evaluator's half; this pins the surface's.
+  for (const [name, needle] of [
+    ['phase', contract.surfacePhaseExpr],
+    ['magnitude', contract.surfaceMagnitudeExpr],
+  ]) {
+    const text = String(needle ?? '');
+    if (!text) {
+      out.findings.push({
+        key: 'margin-surface-undeclared:' + name, ref,
+        notes: ['the manifest declares no surface ' + name + ' expression, so the curve the margin is measured on cannot be confirmed'],
+      });
+    } else if (!surface.includes(text)) {
+      out.findings.push({
+        key: 'margin-surface-drift:' + name, ref: surfaceRel,
+        notes: ['the surface no longer computes its ' + name + ' this way: ' + JSON.stringify(text),
+          'the margin and the plotted curve would then be derived from different quantities, so the crossing a user reads off the plot is not the crossing the margin was taken at'],
+      });
+    }
+  }
+
+  return out;
+}
+
 function checkServiceWorkerCache(site) {
   const swPath = join(site, 'sw.js');
   if (!existsSync(swPath)) {
@@ -2545,6 +2928,9 @@ async function main() {
   const defaultGallery = join(REPO_ROOT, 'scripts', 'gallery-shim.json');
   const galleryPath = args.gallery ?? (existsSync(defaultGallery) ? defaultGallery : null);
   push('  gallery  = ' + (galleryPath ?? 'none'));
+  const defaultMargin = join(REPO_ROOT, 'scripts', 'stability-margin.json');
+  const marginPath = args.margin ?? (existsSync(defaultMargin) ? defaultMargin : null);
+  push('  margin   = ' + (marginPath ?? 'none'));
 
   const refs = checkBaseRefs(site, normalised, args.strict);
   push('  scanned ' + refs.scanned + ' text files, ' + (refs.bytes / 1024).toFixed(0) + ' KiB');
@@ -2607,6 +2993,7 @@ async function main() {
   const importLibs = checkImportLibs(site, importPath);
   const gallery = checkGalleryShim(site, galleryPath);
   const exampleIdentity = checkExampleIdentity(site);
+  const margins = checkStabilityMargin(site, marginPath);
   const jsxFactoryList = jsxFactory
     .filter((r) => r.failures.length > 0)
     .map((r) => ({
@@ -2627,7 +3014,7 @@ async function main() {
     escapedList, missingList, externalList, jsxList, shellList, jsxFactoryList,
     jsxSites.findings, egress.findings, storage.findings, csp.findings,
     swcache.findings, shellCache.findings, corner.findings, importLibs.findings,
-    gallery.findings, exampleIdentity.findings,
+    gallery.findings, exampleIdentity.findings, margins.findings,
   ];
   for (const list of lists) {
     for (const f of list) {
@@ -2867,7 +3254,30 @@ async function main() {
 
   if (stale.length > 0) {
     push('');
-    push('18. stale accepted deviations');
+    push('18. stability margins');
+    push(...render(margins.findings, 'stability margin findings', null, accepted));
+  } else {
+    push('');
+    push('18. stability margins');
+    push('   (the evaluator must be CALLED, not merely defined; both metric names must be members of the');
+    push('    artifact schema\'s CLOSED metric enum in BOTH variants -- a result file carrying a metric the');
+    push('    schema does not enumerate is discarded whole, and the panel then shows no measurements at all;');
+    push('    each row must be emitted with its own unit; a refusal must carry its reason; the five');
+    push('    properties that make the number correct must hold; the margin must be measured on the same');
+    push('    curve the plot draws; and neither AUTHORING table may offer the metrics, because the setup');
+    push('    schema\'s method union cannot represent them)');
+    if (margins.status === 'checked' && margins.findings.length === 0) {
+      push('  ok  ' + margins.metrics.length + ' metric(s) [' +
+        margins.metrics.map((m) => m.metric + ' (' + m.unit + ')').join(', ') +
+        ']: evaluator called, both schema variants admit them, emitted with their own units, refusal carries its reason, five correctness properties intact, plotted curve unchanged, authoring tables untouched');
+    } else {
+      push('  --  ' + margins.notes.join('; '));
+    }
+  }
+
+  if (stale.length > 0) {
+    push('');
+    push('19. stale accepted deviations');
     push(...render(stale, 'accepted entries that matched nothing', null, () => false));
   }
 
@@ -2962,6 +3372,13 @@ async function main() {
         examples: exampleIdentity.examples,
         findings: exampleIdentity.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
         notes: exampleIdentity.notes,
+      },
+      stabilityMargin: {
+        manifest: marginPath,
+        status: margins.status,
+        metrics: margins.metrics,
+        findings: margins.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
+        notes: margins.notes,
       },
       outbound: {
         manifest: outboundPath,

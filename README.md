@@ -74,7 +74,9 @@ or `npm run check:artifacts` / `npm run smoke` / `npm run check:storage` /
 `npm run check:shellcache` / `npm run check:shellcache:neg:static` /
 `npm run check:corner` / `npm run check:corner:neg` /
 `npm run check:import` / `npm run check:import:neg:static` /
-`npm run check:gallery` / `npm run check:gallery:neg:static`.
+`npm run check:gallery` / `npm run check:gallery:neg:static` /
+`npm run check:margin` / `npm run check:margin:neg:static` /
+`npm run check:margin:browser`.
 
 `npm run audit:ux` is **not a guard** and never fails a build. It walks the
 flows a person takes -- the home page, the Gallery panel at both unlock tiers,
@@ -141,6 +143,58 @@ here too. That is the third time a patch has had to do this, which is why the
 offsets are worth replacing with a content-derived key; until then, any patch that
 grows this chunk owes the same re-derivation, and check 10 reports the drift as
 stale acceptances rather than silently.
+
+`npm run patch:margin` re-plays `scripts/stability-margin.json`, which adds
+**Phase margin** and **Gain margin** to the automatic measurement summary. The
+Bode plot already carried both ingredients — an AC output is stored as a pair of
+arrays and the plotting layer already derives `magnitudeDb` / `phaseDeg` from
+exactly those two — so the margin is read off the curve that is already drawn and
+the engine is untouched. Four things about it are worth knowing, and three of them
+are mistakes that had already been made once:
+
+- **The schema's metric enum is closed, and its failure mode is total.** The
+  artifact schema enumerates every metric a result file may carry and rejects any
+  file carrying an unknown one *whole*: the panel then falls back to "Full result
+  files are unavailable or invalid" and **every** measurement disappears, not just
+  the margin. The enum is written **twice** (the available and the unavailable
+  variant) and a margin that is not available still travels through the second
+  one, so extending one and not the other loses the whole result — a build that
+  looks broken because it is. That was found by running the patched tree against
+  the unpatched one, not by reading code.
+- **Automatic only.** Margin is deliberately *absent* from the authoring tables in
+  the surface chunk: the setup editor validates its method kind against a closed
+  union with no margin member, so offering the option would let a user save a setup
+  the authoring schema cannot build. Check 18 asserts the absence, which is what
+  makes a well-meant re-add show up rather than ship.
+- **The phase margin is measured against the loop's own static phase**, not against
+  absolute −180. Against −180 an inverting loop reports ≈275° — a plausible number
+  that misses the instability by a full 180°. The oracle pins this with an
+  inversion-invariance assertion: an inverting stage must report the same margin as
+  its non-inverting twin.
+- **Crossings are found against a level, after unwrapping the phase.** Both
+  shortcuts fail as numbers that look fine rather than as crashes: a sign test
+  reads the ±180 wrap as a crossing and reports a gain margin for a phase that
+  merely passed through zero.
+
+Two independent channels read the same claim, and neither contains the other.
+`stability-margin.oracle.mjs` lifts the evaluator out of the shipped bytes and
+checks it against closed forms (it cannot see the screen), while
+`stability-margin.mjs` drives the page and reads the rendered table — a margin that
+is computed and never drawn passes every other check in this repository. The
+committed example cannot exercise the interesting half of that: with `vin` at 1.0
+its AC response never crosses 0 dB, so on this tree every margin is `unavailable`
+by design and the "the value agrees with its own unit" branch would never run.
+`--fixture=center-magnitude` copies the tree and offsets each magnitude curve so it
+straddles 0 dB (measured: the AC output spans 4.5 dB, ~20 dB below 0 dB, so
+centring — not peak-normalising — is what guarantees a crossing). On that tree the
+page renders `Phase margin = 89.235 deg` next to three structured refusals, and the
+panel's own measurement count moves by exactly one row against the committed tree.
+
+Both schema edits here replace the very text an anchor would key on, so this is the
+one manifest whose `requires` cannot be the unpatched enum: each precondition is
+taken from the text *after* the enum, which is unique and survives the patch. The
+generator asserts both readings before it writes, and `patch:margin --check` is the
+channel that reports a manifest whose anchors a patch would consume.
 
 The process-corner sweep is **teaching-grade**: `tt`/`ss`/`ff` scale the
 Level-1 (Shichman–Hodges) parameters of `site/models/cmos.lib` by a made-up
@@ -277,7 +331,7 @@ anything — so a preview cannot tell you whether the worker works. Pass
 
 | Check | Question it answers |
 |---|---|
-| `check-artifacts.mjs` | Is the bundle self-consistent — do its references resolve, is there no development JSX runtime or folded-`undefined` call site, is every network target in the tree classified, is every storage read inside a `try`/`catch`, does the shell still carry its Content-Security-Policy, does `sw.js` still have the shape its caching needs, does the worker's atomic install payload fit its budget, does the constant it opens its cache under still describe this tree, does the corner set the panel offers match the model library that has to answer it, and does an imported netlist still resolve the model libraries this build ships (including that the text embedded in the chunk is still the bytes of `site/models/*.lib` and that the injected pool is called rather than merely present)? It also holds the static gallery shim to its contract: both insertions present, the dispatch **before** the `/api/` early return that would otherwise swallow it (a defined-but-dead route passes every string test), the entry id shape-checked before it becomes a path segment, no Cache Storage access in a region that must only answer, and every key the shipped client reads still written by an object literal passed to `galleryJson()` — where renaming `entries:` to `items:` leaves the identifier `entries` all over the index reader and so defeats a substring test. |
+| `check-artifacts.mjs` | Is the bundle self-consistent — do its references resolve, is there no development JSX runtime or folded-`undefined` call site, is every network target in the tree classified, is every storage read inside a `try`/`catch`, does the shell still carry its Content-Security-Policy, does `sw.js` still have the shape its caching needs, does the worker's atomic install payload fit its budget, does the constant it opens its cache under still describe this tree, does the corner set the panel offers match the model library that has to answer it, and does an imported netlist still resolve the model libraries this build ships (including that the text embedded in the chunk is still the bytes of `site/models/*.lib` and that the injected pool is called rather than merely present)? It also holds the static gallery shim to its contract: both insertions present, the dispatch **before** the `/api/` early return that would otherwise swallow it (a defined-but-dead route passes every string test), the entry id shape-checked before it becomes a path segment, no Cache Storage access in a region that must only answer, and every key the shipped client reads still written by an object literal passed to `galleryJson()` — where renaming `entries:` to `items:` leaves the identifier `entries` all over the index reader and so defeats a substring test. And it holds the stability-margin repair to both halves of itself: the evaluator present **and called** — a splice missed by one character leaves every string intact and the feature dead, which is why the assertion is on the call shape rather than on the identifiers being present — the closed metric enum extended in **both** of its variants with no unpatched copy left behind, the emitted metric/label/unit kept as a matched set, the five properties that make the number correct still present, and the metrics still **absent** from the authoring tables, where the setup editor's closed method union could not build a setup naming them. |
 | `smoke-test.mjs` | Does the editor actually run — does a real simulation finish with zero uncaught errors? |
 | `storage-resilience.mjs` | Does the editor still render in a browser that **denies** storage? Loads the home page and an `?example=` deep link with `localStorage`/`sessionStorage` replaced by throwing getters — the failure mode of Safari private mode, blocked site data and partitioned iframes — and requires the editor, not the crash screen. |
 | `numeric-crosscheck.mjs` | Are the numbers **right** — does the shipped WASM agree with first-principles closed forms and with model-independent invariants (including for BSIM3/BSIM4, which have no closed form)? It also runs the two **role libraries** the deploy ships (`cap.lib`, `opamp.lib`): an ideal capacitor must be an open circuit at dc and charge with `tau = R*C`, and `opamp_se` must follow its soft-rail tanh transfer behind the series `Rout`. |
@@ -299,6 +353,9 @@ anything — so a preview cannot tell you whether the worker works. Pass
 | `shell-cache.mjs` | Does the constant `sw.js` opens its cache under still describe **this tree**? Upstream's build injects a digest of the emitted asset graph there, and that injection is what lets a deploy retire a stale shell. This repository does not run that build: every repair is a hand-patch that *keeps* the filename the content hash is supposed to police, and the static route is cache-first with no revalidation — so a stale constant hides the repair from every returning client for good. The token is therefore **derived, not chosen**: a SHA-256 over the bytes these routes could store — the `shellUrls()` members, every extension a resource tag can request, and everything under `ENGINE_PAYLOAD_DIRS` — plus those two declarations, because they decide which of those URLs are stored. A file the worker can never be asked for (a licence text, a release manifest) is deliberately *not* hashed: it cannot go stale in anyone's cache. `--write` restores it; `--check` (the default) reports. |
 | `shell-cache.negctl.mjs` | Would check 13 **notice**? Nine mutants — a chunk patched while its content-hashed filename stays, a model card patched (in scope only through `ENGINE_PAYLOAD_DIRS`), the constant set by hand instead of derived, the constant deleted, `activate()`'s retirement prefix narrowed so no old shell is ever dropped, a directory added to `ENGINE_PAYLOAD_DIRS`, a member dropped from `shellUrls()`, `install()` re-pointed at a cache name outside the prefix, and a file added that this worker can never be asked for (which must **not** move the token, pinning the scope) — each required to produce its own outcome. Both channels run, and neither contains the other: `activate-filter-narrowed` requires the runtime channel to *pass* (the retirement rule is static-only), while `install-cache-renamed` leaves the static guard **completely green** — the constant and both declarations are untouched — and only the browser can report it. `--static-only` runs without a browser. |
 | `corner-sweep.negctl.mjs` | Would the corner feature **notice** if it broke? Fifteen cases against real patched copies: a control, the unpatched tree, the capability's corner list emptied or re-ordered, the selector emission dropped, mapped to the wrong value, given an extra branch, or having the typical corner map to a non-zero selector, the emitted `.param` renamed, the descriptor or the run record stripped, the library's base model moved or a device left unmodelled, a manifest that declares a corner the artifact does not implement, and a manifest that is vacuous. Each must turn check 14 red for its own named reason. The runtime half is pinned by `numeric-crosscheck.negctl.mjs`'s `corner_inert` mutant, which edits the **shipped library** so it stops answering the selector: `corner_shifts_every_device` must fail while `corner_default_matches_frozen` stays green — a guard that only ever saw one of those two outcomes could not tell a live sweep from a dead one. |
+| `stability-margin.oracle.mjs` | Is the margin **right**? The evaluator is a source fragment rather than a module, so it is lifted out of the shipped bytes and compiled there, then run against closed forms and invariances: a constant −20 dB/decade loop must yield the textbook numbers at an interpolated crossing, an **inverting** loop must report the same margins as its non-inverting twin (this is the assertion that catches the absolute-reference reading, which reports ≈275° and misses the instability by 180°), a phase that merely passes through 0° must not be read as a crossing, a loop that never crosses must refuse *with a reason* instead of inventing a number, and every accepted record must carry the schema's own `evidence` aggregate rather than an invented one. 69 assertions, and it cannot see the screen — which is the point of it being one of two channels rather than the only one. |
+| `stability-margin.mjs` | Does the margin reach the **screen**? Drives a real browser through the built-in lab's Run control and reads the rendered measurement table back, asserting the row is drawn *in the table's shape* (a text match alone is not a row), that both metrics appear, that each value agrees with its **own** unit — `deg` for the phase, `dB` for the gain — that a refusal carries its reason rather than a bare "Unavailable", and that the panel's own count of rendered measurements matches the rows found. `--fixture=center-magnitude` answers the observation gap that made the first version hollow: the committed example's AC response never crosses 0 dB (it spans 4.5 dB about 20 dB below it), so on this tree every margin refuses by design and the value/unit branch had **never executed**. The fixture copies the tree and offsets each magnitude curve so it straddles 0 dB — peak-normalising does not, which was measured rather than reasoned — and the run then renders `Phase margin 89.235 deg` next to three refusals, with the panel count moving by exactly one row. Needs a real browser; it is a runtime channel, like `offline-sim.mjs` and `gallery-shim.mjs`. |
+| `stability-margin.negctl.mjs` | Would check 18 and the two margin channels **notice**? Nineteen cases against real copies, opening with two controls (an unmutated tree, which must be clean statically *and* in a browser, and the manifest reversed, i.e. the tree with no margin feature at all, which must report each repair as `pending` — the half that proves the reversal is real). Then: the evaluator renamed by one character (definition and call disagree), the splice reverted while the evaluator stays intact (computed correctly, read by nobody), the enum extended in only **one** of its two variants (the artifact is then discarded whole), the emitted unit replaced by the output's own (a phase margin rendering as volts — populated and wrong), the metric renamed on the emitting side only, the authoring tables re-populated through the label table **and** through the method selector (each asserted separately, because they are the mirror image of each other), a manifest with no contract, and a per-property sweep that reverts one correct behaviour at a time: unwrapping dropped, the level test turned into a sign test, the phase reference moved to absolute −180, the noise exclusion removed, the dB clamp floor drifted off the surface's, and the refusal's reason dropped. That last one runs in **both** channels for a stated reason: statically the refusal must carry its reason, and in a browser it must fail *for that reason* rather than for a value — on shipped content the refusal branch is the only one ever reached, so a change there is invisible to a channel that has only seen the available path. `--static-only` runs the whole suite without a browser. |
 
 All of these run in CI: the source-level checks on the deploy job, before `site/`
 is published; the browser checks on the `smoke` job.
