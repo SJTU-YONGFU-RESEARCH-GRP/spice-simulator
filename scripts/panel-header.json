@@ -1,0 +1,36 @@
+{
+  "$comment": "Fix D2-b' -- the Measurements panel header counts inconsistently with its own group headers. The outer 'Measurements' card (function Nt({measurements:e})) rendered its leading 'X values' as the AVAILABLE count (n = e.length - t.length, where t is the unavailable list) while every inner per-output group header rendered its leading 'X values' as the GROUP TOTAL (t.length inside the group map). So the same visual slot meant 'available' at the top level and 'total' one level down: the header read '28 values' while the groups summed to 32, with both attaching '4 unavailable'. The fix makes the outer header lead with the TOTAL (e.length), matching the sum of the group headers, so the panel is internally coherent (32 values, 4 of them unavailable). This is a one-token substitution in the surface chunk: no payload, schema, or metric-enum change, exactly like the other manifest-driven repairs.",
+  "$how": "node scripts/patch-outbound.mjs --manifest=scripts/panel-header.json\n  (then, because site/ bytes changed: npm run bump:shellcache)\nVerify cheapest first:\n  node scripts/check-artifacts.mjs        # check 21, static: outer header leads with e.length\n  node scripts/panel-header.negctl.mjs    # is check 21 vacuous?\nThe browser channels (region-annotate.mjs, stability-margin.mjs) exercise the rendered panel; this repair is asserted statically because the defect is a count-label mismatch, not a missing feature.",
+  "$shape": "panel-header is a SUBSTITUTION: the find text is consumed by the replace, so it needs no marker. The same anchor occurs exactly once in the surface chunk; the inner group header is a different string (it leads with t.length and keys its data-status off n) and is untouched.",
+  "contract": {
+    "file": "assets/spice-simulation-surface-<hash>.js",
+    "function": "Nt({measurements:e})",
+    "$why": "What check 21 in scripts/check-artifacts.mjs looks for.",
+    "outerHeaderBefore": "leading count = n (available = e.length - t.length), label by n===1",
+    "outerHeaderAfter": "leading count = e.length (total), label by e.length===1",
+    "innerHeaderUnchanged": "leading count = t.length (group total), data-status keyed off n (group unavailable)",
+    "canonicalMap": {
+      "outerLeading": "e.length",
+      "outerUnavailableNote": "t.length",
+      "innerLeading": "t.length",
+      "innerUnavailableNote": "n"
+    },
+    "defectNeedle": "children:[n,` `,n===1?`value`:`values`",
+    "fixedNeedle": "children:[e.length,` `,e.length===1?`value`:`values`"
+  },
+  "targets": [],
+  "repairs": [
+    {
+      "id": "panel-header-total",
+      "file": "assets/spice-simulation-surface-Dua32hSB.js",
+      "why": "Make the outer Measurements card lead with the total measurement count so it agrees with the sum of the per-output group headers, instead of leading with the available count while the groups lead with their totals. The 'unavailable' note is unchanged (t.length, the unavailable list).",
+      "requires": "function Nt({measurements:e}){",
+      "edits": [
+        {
+          "find": "{\"data-status\":t.length?`attention`:`ready`,children:[n,` `,n===1?`value`:`values`,t.length?` · ${t.length} unavailable`:``]}",
+          "replace": "{\"data-status\":t.length?`attention`:`ready`,children:[e.length,` `,e.length===1?`value`:`values`,t.length?` · ${t.length} unavailable`:``]}"
+        }
+      ]
+    }
+  ]
+}

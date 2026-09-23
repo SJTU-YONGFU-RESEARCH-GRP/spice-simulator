@@ -64,6 +64,9 @@
   "check:region:browser": "node scripts/region-annotate.mjs",
   "check:cornermap": "node scripts/check-artifacts.mjs",
   "check:cornermap:neg": "node scripts/corner-mapping.negctl.mjs",
+  "patch:header": "node scripts/patch-outbound.mjs --manifest=scripts/panel-header.json",
+  "check:header": "node scripts/check-artifacts.mjs",
+  "check:header:neg": "node scripts/panel-header.negctl.mjs",
     "audit:ux": "node scripts/ux-audit.mjs"
   }
 }

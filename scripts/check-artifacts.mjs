@@ -3079,6 +3079,77 @@ function checkCornerMapping(site) {
   return out;
 }
 
+// D2-b'. The Measurements panel's outer card (function Nt) and its per-output
+// group headers use the SAME "X values" slot with two different meanings: the
+// outer led with the AVAILABLE count (n = e.length - t.length) while every inner
+// group led with its GROUP TOTAL (t.length). The fix (scripts/panel-header.json)
+// makes the outer lead with e.length (total) so the header agrees with the sum of
+// the groups. This check pins that one substitution in place.
+function checkPanelHeader(site) {
+  const out = { status: 'checked', metrics: [], findings: [], notes: [] };
+  const assetsDir = join(site, 'assets');
+  if (!existsSync(assetsDir)) {
+    out.status = 'absent';
+    out.notes.push('no assets/ in this tree');
+    return out;
+  }
+  const surfaces = readdirSync(assetsDir).filter((f) => /^spice-simulation-surface-.*\.js$/.test(f));
+  if (!surfaces.length) {
+    out.status = 'absent';
+    out.notes.push('no spice-simulation-surface chunk in this tree');
+    return out;
+  }
+  const surface = readFileSync(join(assetsDir, surfaces[0]), 'utf8');
+
+  // Applicability: only a tree with the Measurements panel has a header to keep
+  // consistent.
+  if (!surface.includes('function Nt({measurements:e}){')) {
+    out.status = 'absent';
+    out.notes.push('this tree has no Measurements panel (function Nt), so there is no header to keep consistent');
+    return out;
+  }
+
+  // The outer card must lead "X values" with the TOTAL (e.length), matching the
+  // group headers, not with the available count (n).
+  const OUTER_DEFECT = 'children:[n,` `,n===1?`value`:`values`';
+  const OUTER_FIXED = 'children:[e.length,` `,e.length===1?`value`:`values`';
+  const INNER_INTACT = 'children:[t.length,` `,t.length===1?`value`:`values`';
+
+  if (surface.includes(OUTER_DEFECT)) {
+    out.findings.push({
+      key: 'panel-header:outer-leads-with-available',
+      ref: surfaces[0],
+      notes: [
+        'the outer Measurements card header leads its "X values" with the AVAILABLE count (n = e.length - t.length)',
+        'but every per-output group header leads with its GROUP TOTAL (t.length), so the same slot means two things and the header reads "28 values" while the groups sum to 32',
+        'the fix (scripts/panel-header.json) makes the outer header lead with e.length (total); re-anchor this check if function Nt is rewritten',
+      ],
+    });
+  }
+  if (!surface.includes(OUTER_FIXED)) {
+    out.findings.push({
+      key: 'panel-header:outer-missing-total',
+      ref: surfaces[0],
+      notes: [
+        'the outer Measurements card header does not lead its "X values" with e.length (total)',
+        'either the fix was reverted or function Nt was rewritten; re-anchor this check',
+      ],
+    });
+  }
+  // The inner group header must still lead with its group total (t.length).
+  if (!surface.includes(INNER_INTACT)) {
+    out.findings.push({
+      key: 'panel-header:inner-group-missing',
+      ref: surfaces[0],
+      notes: [
+        'the per-output group header no longer leads its "X values" with t.length (group total)',
+        'this check expects group headers to keep their total-leading form; re-anchor if the group header is intentionally changed',
+      ],
+    });
+  }
+  return out;
+}
+
 function checkServiceWorkerCache(site) {
   const swPath = join(site, 'sw.js');
   if (!existsSync(swPath)) {
@@ -3378,6 +3449,7 @@ async function main() {
   const margins = checkStabilityMargin(site, marginPath);
   const region = checkRegionAnnotation(site, regionPath);
   const cornerMap = checkCornerMapping(site);
+  const panelHeader = checkPanelHeader(site);
   const jsxFactoryList = jsxFactory
     .filter((r) => r.failures.length > 0)
     .map((r) => ({
@@ -3399,6 +3471,7 @@ async function main() {
     jsxSites.findings, egress.findings, storage.findings, csp.findings,
     swcache.findings, shellCache.findings, corner.findings, importLibs.findings,
     gallery.findings, exampleIdentity.findings, margins.findings, region.findings, cornerMap.findings,
+    panelHeader.findings,
   ];
   for (const list of lists) {
     for (const f of list) {
@@ -3818,6 +3891,11 @@ async function main() {
         metrics: cornerMap.metrics,
         findings: cornerMap.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
         notes: cornerMap.notes,
+      },
+      panelHeader: {
+        status: panelHeader.status,
+        findings: panelHeader.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
+        notes: panelHeader.notes,
       },
       outbound: {
         manifest: outboundPath,

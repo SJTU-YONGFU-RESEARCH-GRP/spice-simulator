@@ -209,6 +209,15 @@ jobs:
       # working one.
       - name: Prove the corner-mapping check is not vacuous (mutation test)
         run: node scripts/corner-mapping.negctl.mjs
+      # Check 21 (inside the artifact guard above) ties the Measurements panel's
+      # outer card ("X values" leading with the total e.length) to its per-output
+      # group headers (leading with their group total t.length), so the same slot
+      # no longer means "available" at the top and "total" one level down (D2-b').
+      # This step reverts the outer header to the defect form, strips the group
+      # header's leading count, and deletes function Nt, and requires each to be
+      # named -- with a control tree that must stay clean.
+      - name: Prove the panel-header check is not vacuous (mutation test)
+        run: node scripts/panel-header.negctl.mjs
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
