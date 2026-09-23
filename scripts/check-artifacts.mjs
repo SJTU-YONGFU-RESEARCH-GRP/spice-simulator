@@ -183,7 +183,7 @@ function parseArgs(argv) {
   const out = {
     site: join(REPO_ROOT, 'site'), base: null, strict: false, json: null, accept: null,
     outbound: null, csp: null, precache: null, corner: null, import: null, gallery: null,
-    margin: null,
+    margin: null, region: null,
   };
   for (const arg of argv) {
     // An empty value would silently resolve to the current directory and scan
@@ -200,6 +200,7 @@ function parseArgs(argv) {
     else if (arg.startsWith('--import=')) out.import = resolve(REPO_ROOT, arg.slice('--import='.length));
     else if (arg.startsWith('--gallery=')) out.gallery = resolve(REPO_ROOT, arg.slice('--gallery='.length));
     else if (arg.startsWith('--margin=')) out.margin = resolve(REPO_ROOT, arg.slice('--margin='.length));
+    else if (arg.startsWith('--region=')) out.region = resolve(REPO_ROOT, arg.slice('--region='.length));
     else if (arg.startsWith('--json=')) out.json = arg.slice('--json='.length);
     else return { error: 'unknown argument: ' + arg };
   }
@@ -2700,6 +2701,270 @@ function checkStabilityMargin(site, manifestPath) {
   return out;
 }
 
+/**
+ * 19. MOS operating region annotation.
+ *
+ * The Operating Point tab has always drawn VGS / VDS / VBS / ID per device, and
+ * has never said which region the transistor is in -- the shipped example sits
+ * at VDS = 41.6 mV against an overdrive of 400 mV, textbook linear, and a reader
+ * has no way to see that. scripts/region-annotate.json adds one line of
+ * interpretation under that table.
+ *
+ * The reason this check reads TWO files rather than one is where those numbers
+ * come from. They are NOT in the run: the deck the client assembles carries only
+ * `.include ".../cmos.lib"` plus a `.param __cn_sel` selector, and the engine's
+ * log and raw output carry no device parameters at all (measured, not assumed).
+ * So the table is copied out of models/cmos.lib at build time -- and re-derived
+ * here, from the library, so a corner tweak in the library cannot leave the
+ * annotation judging every transistor against the previous process while every
+ * screen still looks correct.
+ *
+ * What is asserted:
+ *   1. the model set the artifact carries equals the LEVEL=1 MOSFET set in
+ *      cmos.lib, and each declared `.model` line appears in the library verbatim
+ *   2. the parameters re-derived here equal the ones the manifest declares, and
+ *      the table the ARTIFACT carries equals the manifest's, byte for byte
+ *   3. the row, its class and the callsite that feeds it are each present exactly
+ *      once -- a runtime that is defined but never called changes bytes and
+ *      behaviour by nothing
+ *   4. the refusals are still refusals: the refusal branch, the tolerance band,
+ *      the model lookup, the body-effect term and the PMOS sign flip are each
+ *      matched in the injected text
+ *   5. the table did NOT leak into the payload. The artifact schema's `metric`
+ *      enum is closed and declared twice, so anything that grows into a
+ *      measurement here would fail validation and discard the whole result file
+ *      -- the exact regression D1 shipped.
+ *
+ * Not re-derived here: whether the arithmetic picks the right region. That is
+ * scripts/region-annotate.oracle.mjs (structural cases, a longhand body-effect
+ * term, a PMOS mirror invariant, the refusal paths), and whether the row reaches
+ * the screen is scripts/region-annotate.mjs, which lifts the injected runtime out
+ * of the artifact and compares it against the text the page drew. Three checks
+ * with three different blind spots, on purpose: this one is the only one that can
+ * see a library edit, and the other two are the only ones that can see whether
+ * the code it reads is right.
+ */
+function parseLibraryMosModels(text) {
+  // Deliberately a second copy of the narrow form scripts/region-annotate.manifest.cjs
+  // parses, not a shared helper: the two must be able to disagree, and the way
+  // they would is the library changing a shape one of them still understands.
+  const SI = { f: -15, p: -12, n: -9, u: -6, m: -3, k: 3, meg: 6, g: 9, t: 12 };
+  const num = (s) => {
+    const m = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)([a-zA-Z]*)$/.exec(String(s).trim());
+    if (!m) return null;
+    const suf = m[2] ? m[2].toLowerCase() : '';
+    const exp = suf === '' ? 0 : SI[suf];
+    if (exp === undefined) return null;
+    const p = /^([+-]?(?:\d+\.?\d*|\.\d+))(?:[eE]([+-]?\d+))?$/.exec(m[1]);
+    if (!p) return null;
+    return Number(p[1] + 'e' + ((p[2] ? Number(p[2]) : 0) + exp));
+  };
+  const pair = (braced) => {
+    const inner = /^\{(.*)\}$/.exec(String(braced).trim());
+    if (!inner) return null;
+    const body = inner[1].trim();
+    if (!body.includes('__cn_sel')) { const v = num(body); return v === null ? null : [v, 0]; }
+    const m = /^(.+?)([+-])(.+?)\*__cn_sel$/.exec(body);
+    if (!m) return null;
+    const base = num(m[1]);
+    const coef = num(m[3]);
+    if (base === null || coef === null) return null;
+    return [base, m[2] === '-' ? -coef : coef];
+  };
+  const field = (t, k) => {
+    const m = new RegExp('(?:^|\\s)' + k + '=(\\{[^}]*\\}|\\S+)').exec(t);
+    return m ? m[1] : null;
+  };
+  const out = {};
+  for (const raw of String(text).split(/\r?\n/)) {
+    const line = raw.trim();
+    const m = /^\.model\s+(\S+)\s+(\S+)\s+(.*)$/.exec(line);
+    if (!m) continue;
+    const kind = m[2].toLowerCase();
+    if (kind !== 'nmos' && kind !== 'pmos') continue;
+    out[m[1]] = {
+      type: kind,
+      level: field(m[3], 'LEVEL'),
+      vto: pair(field(m[3], 'VTO') ?? ''),
+      kp: pair(field(m[3], 'KP') ?? ''),
+      gamma: num(field(m[3], 'GAMMA') ?? ''),
+      phi: num(field(m[3], 'PHI') ?? ''),
+      lambda: num(field(m[3], 'LAMBDA') ?? ''),
+      source: line,
+    };
+  }
+  return out;
+}
+
+function checkRegionAnnotation(site, manifestPath) {
+  const out = { status: 'checked', metrics: [], findings: [], notes: [] };
+  if (!manifestPath) {
+    out.status = 'absent';
+    out.notes.push('no region-annotation manifest (pass --region=<file> to enable this check)');
+    return out;
+  }
+  let manifest;
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  } catch (e) {
+    out.status = 'absent';
+    out.notes.push('cannot read the region-annotation manifest: ' + e.message);
+    return out;
+  }
+  const contract = manifest.contract ?? {};
+  const repairs = manifest.repairs ?? [];
+  const ref = slash(manifestPath.slice(REPO_ROOT.length + 1));
+  const required = ['surfaceFile', 'libraryFile', 'tableLiteral', 'tableMarker', 'rowClass',
+    'utAnchor', 'utRowAnchor', 'callsiteReplace', 'refusalNeedle', 'edgeToleranceNeedle',
+    'modelLookupNeedle', 'bodyEffectNeedle', 'pmosFlipNeedle', 'models'];
+  const missing = required.filter((k) => contract[k] === undefined || contract[k] === null || contract[k] === '');
+  if (!repairs.length || missing.length || !Object.keys(contract.models ?? {}).length) {
+    // A contract that cannot describe a verifiable repair would let every rule
+    // below pass while checking nothing, and would print "ok" -- which is the
+    // failure this guard exists for, so it is a finding rather than a quiet
+    // 'absent'.
+    out.status = 'vacuous';
+    out.findings.push({
+      key: 'region-contract-vacuous', ref,
+      notes: ['the manifest declares no usable region-annotation contract, so nothing here would be verified',
+        'missing: ' + (missing.join(', ') || '(none)') + (repairs.length ? '' : '; no repairs')],
+    });
+    return out;
+  }
+
+  const surfacePath = join(site, String(contract.surfaceFile).split('/').join('\\'));
+  const libraryPath = join(site, String(contract.libraryFile).split('/').join('\\'));
+  if (!existsSync(surfacePath) || !existsSync(libraryPath)) {
+    out.status = 'absent';
+    out.notes.push('this tree has no ' + (existsSync(surfacePath) ? contract.libraryFile : contract.surfaceFile));
+    return out;
+  }
+  const surface = readFileSync(surfacePath, 'utf8');
+  const library = readFileSync(libraryPath, 'utf8');
+  const count = (t, n) => { let c = 0; let at = 0; for (;;) { const i = t.indexOf(n, at); if (i === -1) return c; c += 1; at = i + n.length; } };
+
+  // Applicability. The gate is whether this tree DRAWS the per-device table the
+  // row belongs to. That anchor is upstream and survives the patch (the runtime
+  // is injected in front of it), so a tree that declares the card and does not
+  // carry the patch is a finding, while a synthetic two-file tree built by some
+  // other negative control is not spoken about at all.
+  if (!surface.includes(String(contract.utAnchor))) {
+    out.status = 'absent';
+    out.notes.push('this tree has no "MOS operating-point details" card, so there is no table for a region line to sit under');
+    return out;
+  }
+  out.metrics.push('models=' + Object.keys(contract.models).length + ' table=' + String(contract.tableLiteral).length + 'B');
+
+  // --- 1. the library and the manifest agree -------------------------------
+  const parsed = parseLibraryMosModels(library);
+  const declared = contract.models;
+  const libKeys = Object.keys(parsed).sort().join(',');
+  const decKeys = Object.keys(declared).sort().join(',');
+  if (libKeys !== decKeys) {
+    out.findings.push({
+      key: 'region-model-set-drift', ref: contract.libraryFile,
+      notes: ['the artifact carries these models: ' + decKeys,
+        'the library declares these LEVEL=1 MOS models: ' + libKeys,
+        'a model the library gained and the table did not is simply never annotated; a model the table kept and the library dropped is annotated from parameters that are no longer the ones the engine solved against'],
+    });
+  }
+  for (const name of Object.keys(declared)) {
+    const d = declared[name];
+    if (typeof d.source !== 'string' || !library.includes(d.source)) {
+      out.findings.push({
+        key: 'region-source-drift:' + name, ref: contract.libraryFile,
+        notes: ['the declared source line is not in the library verbatim: ' + JSON.stringify(d.source)],
+      });
+      continue;
+    }
+    const p = parsed[name];
+    if (!p) continue;
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    if (!same(p.vto, d.vto) || !same(p.kp, d.kp) || p.gamma !== d.gamma || p.phi !== d.phi || p.lambda !== d.lambda || p.type !== d.type) {
+      out.findings.push({
+        key: 'region-param-drift:' + name, ref: contract.libraryFile,
+        notes: ['library line  ' + d.source,
+          're-derived    ' + JSON.stringify({ type: p.type, vto: p.vto, kp: p.kp, gamma: p.gamma, phi: p.phi, lambda: p.lambda }),
+          'declared      ' + JSON.stringify({ type: d.type, vto: d.vto, kp: d.kp, gamma: d.gamma, phi: d.phi, lambda: d.lambda })],
+      });
+    }
+  }
+  for (const ex of contract.excluded ?? []) {
+    if (!library.includes(String(ex.source))) {
+      out.findings.push({
+        key: 'region-exclusion-stale:' + ex.name, ref: contract.libraryFile,
+        notes: ['an excluded model\'s source line is no longer in the library: ' + JSON.stringify(ex.source)],
+      });
+    } else if (String(ex.level) === '1') {
+      out.findings.push({
+        key: 'region-exclusion-level-one:' + ex.name, ref: contract.libraryFile,
+        notes: ['a LEVEL=1 model is listed as excluded, so it would be silently unannotated: ' + ex.name],
+      });
+    }
+  }
+
+  // --- 2. the artifact and the manifest agree ------------------------------
+  const tableNeedle = String(contract.tableMarker) + String(contract.tableLiteral) + ';';
+  const tableHits = count(surface, tableNeedle);
+  if (tableHits !== 1) {
+    out.findings.push({
+      key: 'region-table-drift', ref: contract.surfaceFile,
+      notes: ['the parameter table in the artifact is not the one this manifest declares (' + tableHits + ' occurrence(s) of the expected literal)',
+        'the table is derived from models/cmos.lib by scripts/region-annotate.manifest.cjs; regenerate and re-patch rather than editing the artifact'],
+    });
+  }
+
+  // --- 3. the row and the callsite that feeds it ---------------------------
+  for (const [name, needle, refRel] of [
+    ['the row element', contract.rowClass, contract.surfaceFile],
+    ['the callsite', contract.callsiteReplace, contract.surfaceFile],
+  ]) {
+    const text = String(needle ?? '');
+    const hits = text ? count(surface, text) : 0;
+    if (hits !== 1) {
+      out.findings.push({
+        key: 'region-wiring:' + name.replace(/\s+/g, '-'), ref: refRel,
+        notes: [name + ' is present ' + hits + ' time(s) rather than once: ' + JSON.stringify(text),
+          'a runtime that is defined but never rendered, or a card that is never handed the annotated list, changes bytes and behaviour by nothing'],
+      });
+    }
+  }
+
+  // --- 4. the refusals are still refusals ----------------------------------
+  for (const [name, needle] of [
+    ['the refusal branch', contract.refusalNeedle],
+    ['the tolerance band', contract.edgeToleranceNeedle],
+    ['the model lookup', contract.modelLookupNeedle],
+    ['the body-effect term', contract.bodyEffectNeedle],
+    ['the PMOS sign flip', contract.pmosFlipNeedle],
+  ]) {
+    const text = String(needle ?? '');
+    if (!text || !surface.includes(text)) {
+      out.findings.push({
+        key: 'region-refusal-lost:' + name.replace(/\s+/g, '-'), ref: contract.surfaceFile,
+        notes: [name + ' is no longer in the artifact: ' + JSON.stringify(text),
+          'without it a row would be printed for a device it cannot be trusted about, which is worse than printing nothing'],
+      });
+    }
+  }
+
+  // --- 5. it did not leak into the payload ---------------------------------
+  const assetsDir = join(site, 'assets');
+  const schemaNames = existsSync(assetsDir) ? readdirSync(assetsDir).filter((f) => /^files-.*\.js$/.test(f)) : [];
+  for (const f of schemaNames) {
+    const text = readFileSync(join(assetsDir, f), 'utf8');
+    if (text.includes(String(contract.tableMarker)) || text.includes(String(contract.rowClass))) {
+      out.findings.push({
+        key: 'region-in-payload:' + f, ref: 'assets/' + f,
+        notes: ['the region table or its row class appears in the artifact-schema chunk',
+          'this is a reading of measurements already on screen, not a measurement; the schema\'s metric enum is closed and declared twice, and a name missing there makes the client discard the WHOLE result file'],
+      });
+    }
+  }
+
+  return out;
+}
+
 function checkServiceWorkerCache(site) {
   const swPath = join(site, 'sw.js');
   if (!existsSync(swPath)) {
@@ -2931,6 +3196,9 @@ async function main() {
   const defaultMargin = join(REPO_ROOT, 'scripts', 'stability-margin.json');
   const marginPath = args.margin ?? (existsSync(defaultMargin) ? defaultMargin : null);
   push('  margin   = ' + (marginPath ?? 'none'));
+  const defaultRegion = join(REPO_ROOT, 'scripts', 'region-annotate.json');
+  const regionPath = args.region ?? (existsSync(defaultRegion) ? defaultRegion : null);
+  push('  region   = ' + (regionPath ?? 'none'));
 
   const refs = checkBaseRefs(site, normalised, args.strict);
   push('  scanned ' + refs.scanned + ' text files, ' + (refs.bytes / 1024).toFixed(0) + ' KiB');
@@ -2994,6 +3262,7 @@ async function main() {
   const gallery = checkGalleryShim(site, galleryPath);
   const exampleIdentity = checkExampleIdentity(site);
   const margins = checkStabilityMargin(site, marginPath);
+  const region = checkRegionAnnotation(site, regionPath);
   const jsxFactoryList = jsxFactory
     .filter((r) => r.failures.length > 0)
     .map((r) => ({
@@ -3014,7 +3283,7 @@ async function main() {
     escapedList, missingList, externalList, jsxList, shellList, jsxFactoryList,
     jsxSites.findings, egress.findings, storage.findings, csp.findings,
     swcache.findings, shellCache.findings, corner.findings, importLibs.findings,
-    gallery.findings, exampleIdentity.findings, margins.findings,
+    gallery.findings, exampleIdentity.findings, margins.findings, region.findings,
   ];
   for (const list of lists) {
     for (const f of list) {
@@ -3252,7 +3521,7 @@ async function main() {
     push('  --  ' + exampleIdentity.notes.join('; '));
   }
 
-  if (stale.length > 0) {
+  if (margins.findings.length > 0) {
     push('');
     push('18. stability margins');
     push(...render(margins.findings, 'stability margin findings', null, accepted));
@@ -3275,9 +3544,33 @@ async function main() {
     }
   }
 
+  if (region.findings.length > 0) {
+    push('');
+    push('19. MOS operating region annotation');
+    push(...render(region.findings, 'region annotation findings', null, accepted));
+  } else {
+    push('');
+    push('19. MOS operating region annotation');
+    push('   (the per-device card must carry a region line derived from the SAME LEVEL=1 parameters the');
+    push('    engine solved against -- those live only in models/cmos.lib, never in prepared.cir or the');
+    push('    result, so the table is parsed into the artifact and this check re-derives it from the');
+    push('    library; the row must be rendered by a callsite that is handed the annotated list, not');
+    push('    merely defined; a refusal must still exist for every device the reading cannot be trusted');
+    push('    about; and the table must NOT reach the artifact-schema chunk, whose metric enum is closed');
+    push('    and declared twice -- one unlisted name there discards the WHOLE result file)');
+    if (region.status === 'checked' && region.findings.length === 0) {
+      push('  ok  ' + region.metrics.join(', ') +
+        ': parameters re-derived from the model library, the table and its row each rendered exactly ' +
+        'once, the callsite is handed the annotated list, the refusal/edge/body-effect/PMOS clauses ' +
+        'survive, and nothing leaked into the schema chunk');
+    } else {
+      push('  --  ' + region.notes.join('; '));
+    }
+  }
+
   if (stale.length > 0) {
     push('');
-    push('19. stale accepted deviations');
+    push('20. stale accepted deviations');
     push(...render(stale, 'accepted entries that matched nothing', null, () => false));
   }
 
@@ -3379,6 +3672,13 @@ async function main() {
         metrics: margins.metrics,
         findings: margins.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
         notes: margins.notes,
+      },
+      regionAnnotation: {
+        manifest: regionPath,
+        status: region.status,
+        metrics: region.metrics,
+        findings: region.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
+        notes: region.notes,
       },
       outbound: {
         manifest: outboundPath,

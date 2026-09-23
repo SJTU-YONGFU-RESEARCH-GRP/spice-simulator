@@ -76,7 +76,9 @@ or `npm run check:artifacts` / `npm run smoke` / `npm run check:storage` /
 `npm run check:import` / `npm run check:import:neg:static` /
 `npm run check:gallery` / `npm run check:gallery:neg:static` /
 `npm run check:margin` / `npm run check:margin:neg:static` /
-`npm run check:margin:browser`.
+`npm run check:margin:browser` /
+`npm run check:region` / `npm run check:region:neg` /
+`npm run check:region:browser`.
 
 `npm run audit:ux` is **not a guard** and never fails a build. It walks the
 flows a person takes -- the home page, the Gallery panel at both unlock tiers,
@@ -195,6 +197,58 @@ one manifest whose `requires` cannot be the unpatched enum: each precondition is
 taken from the text *after* the enum, which is unique and survives the patch. The
 generator asserts both readings before it writes, and `patch:margin --check` is the
 channel that reports a manifest whose anchors a patch would consume.
+
+`npm run patch:region` re-plays `scripts/region-annotate.json`, which adds a
+**Region** line to each device card under the Operating Point tab — `Region
+Saturation · VDS = 200.0 mV ≥ Vov = 250.0 mV` and its two siblings, with a refusal
+instead of a line whenever the reading cannot be trusted. It is the only repair in
+this repository whose input does not exist in the run at all, and that is what
+shapes everything about it:
+
+- **The device parameters are never in the run.** The deck the engine executes
+  carries `.include ".../cmos.lib"` and a `.param __cn_sel` selector and nothing
+  else: no `.model` line, no `LEVEL`, no `VTO`. `prepared.cir`, `log.txt` and
+  `out.raw` were each read and none of them carries a device parameter, so a
+  region computed at display time would need an expression evaluator over a
+  netlist the client does not have. Instead the eight LEVEL=1 models are parsed
+  out of `site/models/cmos.lib` at build time into `[typical, corner-coefficient]`
+  pairs and inlined. Check 19 re-derives that table from the library and fails any
+  tree where the two disagree — otherwise an upstream corner tweak would leave
+  every transistor judged against the previous process.
+- **The corner is not a parameter either.** It comes from
+  `result.metadata.configuration.modelLibrary.section`, the same field the deck
+  assembler reads when it decides whether to emit `.param __cn_sel`. `tt`, the
+  empty string and `null` all mean "nothing was emitted and the library's own
+  `= 0` stands"; `ss` and `ff` move the threshold and the transconductance the way
+  the library's coefficients say.
+- **Nothing about it touches the payload.** Not the result file, not the metric
+  enum, not the schema. The reading is derived on the client from measurements
+  already on screen, so the enum's total-failure mode cannot be reached through
+  it — and check 19 asserts the table never reaches the artifact-schema chunk, in
+  either of the two places it could hide.
+- **A device it cannot judge gets no line rather than a wrong one.** A model the
+  table does not carry, a corner selector with no mapping, an instance that is not
+  in the schematic, an operating point the engine did not produce, and a body bias
+  that would make `PHI + VSB` non-positive all refuse. Within ±2 % of `VDS == Vov`
+  the line says *at the edge of saturation* instead of picking a side, because that
+  is where both LEVEL=1 formulas are equally wrong.
+- **PMOS is the mirror of NMOS, not a second code path.** The signs are flipped
+  once on the way in, so an inverting device cannot drift out of step with its
+  complement; the oracle runs the same operating point through both polarities.
+- **The model name is read, never guessed.** The device is resolved through
+  `documentId` + `instanceId` into the schematic instance's
+  `netlist.binding.name`; a device whose binding cannot be found refuses.
+
+Two channels again. `region-annotate.oracle.mjs` lifts the injected runtime out of
+the shipped chunk, builds operating points structurally (`VDS = Vov/2` must be
+linear, `VDS = 2·Vov` must be saturated) and against an independently written
+body-effect expression, and its sharpest assertion is an *identity*: the
+drain-current formula implied by the region the row claims reproduces the current
+the engine produced — 5.2e-10 relative on the shipped lab, while the other
+region's formula misses it by a factor of four, so a row cannot be right about the
+region and wrong about the number. `region-annotate.mjs` drives the page, opens
+the Operating Point tab, and requires the text the artifact's own function
+computes to be the text the card renders.
 
 The process-corner sweep is **teaching-grade**: `tt`/`ss`/`ff` scale the
 Level-1 (Shichman–Hodges) parameters of `site/models/cmos.lib` by a made-up
@@ -331,7 +385,7 @@ anything — so a preview cannot tell you whether the worker works. Pass
 
 | Check | Question it answers |
 |---|---|
-| `check-artifacts.mjs` | Is the bundle self-consistent — do its references resolve, is there no development JSX runtime or folded-`undefined` call site, is every network target in the tree classified, is every storage read inside a `try`/`catch`, does the shell still carry its Content-Security-Policy, does `sw.js` still have the shape its caching needs, does the worker's atomic install payload fit its budget, does the constant it opens its cache under still describe this tree, does the corner set the panel offers match the model library that has to answer it, and does an imported netlist still resolve the model libraries this build ships (including that the text embedded in the chunk is still the bytes of `site/models/*.lib` and that the injected pool is called rather than merely present)? It also holds the static gallery shim to its contract: both insertions present, the dispatch **before** the `/api/` early return that would otherwise swallow it (a defined-but-dead route passes every string test), the entry id shape-checked before it becomes a path segment, no Cache Storage access in a region that must only answer, and every key the shipped client reads still written by an object literal passed to `galleryJson()` — where renaming `entries:` to `items:` leaves the identifier `entries` all over the index reader and so defeats a substring test. And it holds the stability-margin repair to both halves of itself: the evaluator present **and called** — a splice missed by one character leaves every string intact and the feature dead, which is why the assertion is on the call shape rather than on the identifiers being present — the closed metric enum extended in **both** of its variants with no unpatched copy left behind, the emitted metric/label/unit kept as a matched set, the five properties that make the number correct still present, and the metrics still **absent** from the authoring tables, where the setup editor's closed method union could not build a setup naming them. |
+| `check-artifacts.mjs` | Is the bundle self-consistent — do its references resolve, is there no development JSX runtime or folded-`undefined` call site, is every network target in the tree classified, is every storage read inside a `try`/`catch`, does the shell still carry its Content-Security-Policy, does `sw.js` still have the shape its caching needs, does the worker's atomic install payload fit its budget, does the constant it opens its cache under still describe this tree, does the corner set the panel offers match the model library that has to answer it, and does an imported netlist still resolve the model libraries this build ships (including that the text embedded in the chunk is still the bytes of `site/models/*.lib` and that the injected pool is called rather than merely present)? It also holds the static gallery shim to its contract: both insertions present, the dispatch **before** the `/api/` early return that would otherwise swallow it (a defined-but-dead route passes every string test), the entry id shape-checked before it becomes a path segment, no Cache Storage access in a region that must only answer, and every key the shipped client reads still written by an object literal passed to `galleryJson()` — where renaming `entries:` to `items:` leaves the identifier `entries` all over the index reader and so defeats a substring test. And it holds the stability-margin repair to both halves of itself: the evaluator present **and called** — a splice missed by one character leaves every string intact and the feature dead, which is why the assertion is on the call shape rather than on the identifiers being present — the closed metric enum extended in **both** of its variants with no unpatched copy left behind, the emitted metric/label/unit kept as a matched set, the five properties that make the number correct still present, and the metrics still **absent** from the authoring tables, where the setup editor's closed method union could not build a setup naming them. And it holds the operating-region annotation to the parameters the engine actually solved against: the table in the artifact is re-derived from `site/models/cmos.lib` — the only place a LEVEL=1 parameter exists, since the deck carries an `.include` and a corner selector and no `.model` line, and `prepared.cir`, `log.txt` and `out.raw` were each read and none of them carries one — the row element and the callsite that hands the card its annotated list are each present exactly once (a runtime that is defined but never rendered changes bytes and behaviour by nothing), the five clauses that make a reading trustworthy — the refusal, the edge band, the model lookup, the body-effect term, the PMOS sign flip — are all still there, and neither the table nor the row class has reached the artifact-schema chunk, whose closed metric enum is declared twice and would discard the whole result file for one unlisted name. |
 | `smoke-test.mjs` | Does the editor actually run — does a real simulation finish with zero uncaught errors? |
 | `storage-resilience.mjs` | Does the editor still render in a browser that **denies** storage? Loads the home page and an `?example=` deep link with `localStorage`/`sessionStorage` replaced by throwing getters — the failure mode of Safari private mode, blocked site data and partitioned iframes — and requires the editor, not the crash screen. |
 | `numeric-crosscheck.mjs` | Are the numbers **right** — does the shipped WASM agree with first-principles closed forms and with model-independent invariants (including for BSIM3/BSIM4, which have no closed form)? It also runs the two **role libraries** the deploy ships (`cap.lib`, `opamp.lib`): an ideal capacitor must be an open circuit at dc and charge with `tau = R*C`, and `opamp_se` must follow its soft-rail tanh transfer behind the series `Rout`. |
@@ -356,6 +410,10 @@ anything — so a preview cannot tell you whether the worker works. Pass
 | `stability-margin.oracle.mjs` | Is the margin **right**? The evaluator is a source fragment rather than a module, so it is lifted out of the shipped bytes and compiled there, then run against closed forms and invariances: a constant −20 dB/decade loop must yield the textbook numbers at an interpolated crossing, an **inverting** loop must report the same margins as its non-inverting twin (this is the assertion that catches the absolute-reference reading, which reports ≈275° and misses the instability by 180°), a phase that merely passes through 0° must not be read as a crossing, a loop that never crosses must refuse *with a reason* instead of inventing a number, and every accepted record must carry the schema's own `evidence` aggregate rather than an invented one. 69 assertions, and it cannot see the screen — which is the point of it being one of two channels rather than the only one. |
 | `stability-margin.mjs` | Does the margin reach the **screen**? Drives a real browser through the built-in lab's Run control and reads the rendered measurement table back, asserting the row is drawn *in the table's shape* (a text match alone is not a row), that both metrics appear, that each value agrees with its **own** unit — `deg` for the phase, `dB` for the gain — that a refusal carries its reason rather than a bare "Unavailable", and that the panel's own count of rendered measurements matches the rows found. `--fixture=center-magnitude` answers the observation gap that made the first version hollow: the committed example's AC response never crosses 0 dB (it spans 4.5 dB about 20 dB below it), so on this tree every margin refuses by design and the value/unit branch had **never executed**. The fixture copies the tree and offsets each magnitude curve so it straddles 0 dB — peak-normalising does not, which was measured rather than reasoned — and the run then renders `Phase margin 89.235 deg` next to three refusals, with the panel count moving by exactly one row. Needs a real browser; it is a runtime channel, like `offline-sim.mjs` and `gallery-shim.mjs`. |
 | `stability-margin.negctl.mjs` | Would check 18 and the two margin channels **notice**? Nineteen cases against real copies, opening with two controls (an unmutated tree, which must be clean statically *and* in a browser, and the manifest reversed, i.e. the tree with no margin feature at all, which must report each repair as `pending` — the half that proves the reversal is real). Then: the evaluator renamed by one character (definition and call disagree), the splice reverted while the evaluator stays intact (computed correctly, read by nobody), the enum extended in only **one** of its two variants (the artifact is then discarded whole), the emitted unit replaced by the output's own (a phase margin rendering as volts — populated and wrong), the metric renamed on the emitting side only, the authoring tables re-populated through the label table **and** through the method selector (each asserted separately, because they are the mirror image of each other), a manifest with no contract, and a per-property sweep that reverts one correct behaviour at a time: unwrapping dropped, the level test turned into a sign test, the phase reference moved to absolute −180, the noise exclusion removed, the dB clamp floor drifted off the surface's, and the refusal's reason dropped. That last one runs in **both** channels for a stated reason: statically the refusal must carry its reason, and in a browser it must fail *for that reason* rather than for a value — on shipped content the refusal branch is the only one ever reached, so a change there is invisible to a channel that has only seen the available path. `--static-only` runs the whole suite without a browser. |
+| `region-annotate.manifest.cjs` | Where does the operating-region table come from? Parses the eight LEVEL=1 models out of `site/models/cmos.lib` into `[typical, corner-coefficient]` pairs — written as powers of ten, so `200u` lands as `0.0002` rather than `0.00019999999999999998` — takes the injected runtime from `region-annotate.runtime.js`, normalises a patched tree back to its unpatched form **in memory** so the generator can be run against either, and asserts every precondition in both forms before it writes, including that each `requires` survives the patch that would otherwise consume it. |
+| `region-annotate.oracle.mjs` | Is the region **right**? The injected runtime is a source fragment rather than a module, so it is lifted out of the shipped bytes and compiled there, then run against structurally built operating points (`VDS = Vov/2` must be linear, `VDS = 2·Vov` must be saturated) and an independently written body-effect expression. Its sharpest assertion is an *identity*: the drain-current formula implied by the region the row claims reproduces the current the engine produced — 5.2e-10 relative on the shipped lab, while the other region's formula misses it by a factor of four. Also pins the corner map, the PMOS mirror, six refusal paths, and that the run's device list is not mutated in place. |
+| `region-annotate.mjs` | Does the region reach the **screen**? Drives a real browser to the Operating Point tab on the shipped lab and requires the text the artifact's own function computes to be the text the card renders — character for character, so a row rendering the right words from the wrong numbers is caught — then reads the corner out of the run and reconciles the parameters behind that line with the engine's own drain current. Needs a real browser; it is a runtime channel, like `stability-margin.mjs`. |
+| `region-annotate.negctl.mjs` | Would check 19 and that channel **notice**? Nineteen cases against real copies, opening with two controls pointing in opposite directions (an unmutated patched tree, which must be clean, and the manifest reversed, which must name its own list of keys). Then: one table parameter moved, a model dropped from the library, a LEVEL=1 model added to the exclusion list — the one place a model can leave the table without the set comparison noticing — the callsite reverted to the raw device list (patched, hashed and inert: the shape that made an earlier import repair a no-op), each of the five clauses dropped in turn, and the table pasted into the schema chunk through **both** arms of the leak rule. Plus three manifest cases (a required clause missing, a hand-edited parameter, a path that is not there) and a tree whose card is gone entirely, where the check must go quiet. |
 
 All of these run in CI: the source-level checks on the deploy job, before `site/`
 is published; the browser checks on the `smoke` job.

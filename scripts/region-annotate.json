@@ -1,0 +1,211 @@
+{
+  "version": 1,
+  "$comment": "Adds one line of interpretation under each device in the Operating Point tab's \"MOS operating-point details\" card, saying which region the transistor is in and showing the quantities that decided it (Vov and VDS). The four numbers it reads are already on screen; what was missing was the reading, and the shipped example sits at VDS = 41.6 mV against Vov = 400 mV -- textbook linear region, indistinguishable on screen from a working amplifier.\nThe parameters are NOT in the run. The deck carries only `.include \".../cmos.lib\"` plus a `.param __cn_sel` selector; there is no `.model` line, no LEVEL, no VTO, and log.txt and out.raw carry no device parameters either. So the table is copied out of site/models/cmos.lib at build time and re-derived by check 19, which fails any tree where the two disagree -- otherwise a corner tweak in the library would leave every transistor judged against the previous process.",
+  "$how": "node scripts/region-annotate.manifest.cjs        # regenerate after any upstream rebuild\nnode scripts/patch-outbound.mjs --manifest=scripts/region-annotate.json\n  --site=D  patch D instead of ./site (used to try the manifest on a copy first)\nThen, because site/ bytes changed: node scripts/shell-cache.mjs --write\nAnd verify, cheapest first:\n  node scripts/check-artifacts.mjs      # check 19, static: the table still matches cmos.lib\n  node scripts/region-annotate.oracle.mjs --site=D   # LEVEL-1 ID vs the engine's own ID\n  node scripts/region-annotate.negctl.mjs --site=D   # is check 19 vacuous?\n  node scripts/region-annotate.mjs --site=D          # is the line on the screen?",
+  "$shape": "region-runtime and region-row are INSERTIONS (the find text survives inside the replace). region-callsite is a SUBSTITUTION. For an insertion the \"already applied\" test is the marker, not the find, which survives by construction.",
+  "$mechanism": "A region is a reading of measurements the user already has, not a new measurement, so it must not enter the artifact as one. Three things would have had to change to make it a measurement, and each is a live failure mode in this tree:\n  1. the artifact schema's `metric` enum (files-DP-BVVb4.js) is CLOSED and declared TWICE. A name missing there fails validation, the artifact is discarded, and the panel replaces every table with \"Full result files are unavailable or invalid\" -- the user loses the results they already had. This is what D1 shipped and had to fix.\n  2. `deviceOperatingPoints` is likewise declared TWICE and inconsistently: the request-side schema closes parameter/label/unit to enums, the result-side leaves them open, and NEITHER has a `model` field -- while zod strips unknown keys, so a `model` added to the payload would be silently eaten.\n  3. adding it to the automatic summary would put it in measurements.csv, where a per-device interpretation does not belong and where nothing on the Operating Point tab would show it.\nSo the computation happens in the client, on the device list the panel already receives, and NOTHING in the payload, the schema or the metric enum changes. The model name is not carried in the payload either -- it is read back from the schematic instance, which already holds it as netlist.binding.name, using the document walk `surface` already performs twice.",
+  "contract": {
+    "$why": "What check 19 in scripts/check-artifacts.mjs looks for.",
+    "surfaceFile": "assets/spice-simulation-surface-Dua32hSB.js",
+    "libraryFile": "models/cmos.lib",
+    "runtimeFile": "scripts/region-annotate.runtime.js",
+    "utAnchor": "var Ht=``;function Ut({devices:e}){",
+    "utRowAnchor": "},void 0,!1,{fileName:Ht,lineNumber:24},this)]},e.id,!0,",
+    "callsiteFind": "(0,T.jsxDEV)(Ut,{devices:u.outputData.deviceOperatingPoints??[]},void 0,!1,{fileName:$,lineNumber:1556},this)",
+    "callsiteReplace": "(0,T.jsxDEV)(Ut,{devices:rgAnnotate(n,u)},void 0,!1,{fileName:$,lineNumber:1556},this)",
+    "tablePlaceholder": "__RG_TABLE__",
+    "tableLiteral": "{\"nmos_rvt\":{\"type\":\"nmos\",\"vto\":[0.5,0.08],\"kp\":[0.0002,-0.00003],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05},\"pmos_rvt\":{\"type\":\"pmos\",\"vto\":[-0.5,-0.08],\"kp\":[0.0001,-0.000015],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05},\"nmos_nat\":{\"type\":\"nmos\",\"vto\":[0,0.08],\"kp\":[0.0002,-0.00003],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05},\"nmos_dep\":{\"type\":\"nmos\",\"vto\":[-0.7,0.08],\"kp\":[0.0002,-0.00003],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05},\"nmos_hvt\":{\"type\":\"nmos\",\"vto\":[0.7,0.08],\"kp\":[0.0002,-0.00003],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05},\"pmos_hvt\":{\"type\":\"pmos\",\"vto\":[-0.7,-0.08],\"kp\":[0.0001,-0.000015],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05},\"nmos_tox\":{\"type\":\"nmos\",\"vto\":[0.7,0.08],\"kp\":[0.00008,-0.000012],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05},\"pmos_tox\":{\"type\":\"pmos\",\"vto\":[-0.7,-0.08],\"kp\":[0.00004,-0.000006],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05}}",
+    "tableFields": [
+      "type",
+      "vto",
+      "kp",
+      "gamma",
+      "phi",
+      "lambda"
+    ],
+    "tableMarker": "var rgTable = ",
+    "rowClass": "simulation-device-region",
+    "deviceProp": "region",
+    "cornerSource": "result.metadata.configuration.modelLibrary.section",
+    "cornerMap": {
+      "null": "0",
+      "tt": "0",
+      "ss": "1",
+      "ff": "-1"
+    },
+    "edgeTolerance": 0.02,
+    "edgeToleranceNeedle": "<= 0.02 * Math.abs(VOV)",
+    "refusalNeedle": "if (!(VOV > 0)) return `Region  Cutoff",
+    "modelLookupNeedle": "inst.netlist?.binding?.name ?? null",
+    "bodyEffectNeedle": "VTH = VTO + p.gamma * (Math.sqrt(PSI) - Math.sqrt(p.phi))",
+    "pmosFlipNeedle": "let s = p.type === `pmos` ? -1 : 1;",
+    "levelOneOnly": true,
+    "models": {
+      "nmos_rvt": {
+        "type": "nmos",
+        "vto": [
+          0.5,
+          0.08
+        ],
+        "kp": [
+          0.0002,
+          -0.00003
+        ],
+        "gamma": 0.4,
+        "phi": 0.7,
+        "lambda": 0.05,
+        "source": ".model nmos_rvt NMOS LEVEL=1 VTO={0.5+0.08*__cn_sel} KP={200u-30u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05"
+      },
+      "pmos_rvt": {
+        "type": "pmos",
+        "vto": [
+          -0.5,
+          -0.08
+        ],
+        "kp": [
+          0.0001,
+          -0.000015
+        ],
+        "gamma": 0.4,
+        "phi": 0.7,
+        "lambda": 0.05,
+        "source": ".model pmos_rvt PMOS LEVEL=1 VTO={-0.5-0.08*__cn_sel} KP={100u-15u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05"
+      },
+      "nmos_nat": {
+        "type": "nmos",
+        "vto": [
+          0,
+          0.08
+        ],
+        "kp": [
+          0.0002,
+          -0.00003
+        ],
+        "gamma": 0.4,
+        "phi": 0.7,
+        "lambda": 0.05,
+        "source": ".model nmos_nat NMOS LEVEL=1 VTO={0.0+0.08*__cn_sel} KP={200u-30u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05"
+      },
+      "nmos_dep": {
+        "type": "nmos",
+        "vto": [
+          -0.7,
+          0.08
+        ],
+        "kp": [
+          0.0002,
+          -0.00003
+        ],
+        "gamma": 0.4,
+        "phi": 0.7,
+        "lambda": 0.05,
+        "source": ".model nmos_dep NMOS LEVEL=1 VTO={-0.7+0.08*__cn_sel} KP={200u-30u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05"
+      },
+      "nmos_hvt": {
+        "type": "nmos",
+        "vto": [
+          0.7,
+          0.08
+        ],
+        "kp": [
+          0.0002,
+          -0.00003
+        ],
+        "gamma": 0.4,
+        "phi": 0.7,
+        "lambda": 0.05,
+        "source": ".model nmos_hvt NMOS LEVEL=1 VTO={0.7+0.08*__cn_sel} KP={200u-30u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05"
+      },
+      "pmos_hvt": {
+        "type": "pmos",
+        "vto": [
+          -0.7,
+          -0.08
+        ],
+        "kp": [
+          0.0001,
+          -0.000015
+        ],
+        "gamma": 0.4,
+        "phi": 0.7,
+        "lambda": 0.05,
+        "source": ".model pmos_hvt PMOS LEVEL=1 VTO={-0.7-0.08*__cn_sel} KP={100u-15u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05"
+      },
+      "nmos_tox": {
+        "type": "nmos",
+        "vto": [
+          0.7,
+          0.08
+        ],
+        "kp": [
+          0.00008,
+          -0.000012
+        ],
+        "gamma": 0.4,
+        "phi": 0.7,
+        "lambda": 0.05,
+        "source": ".model nmos_tox NMOS LEVEL=1 VTO={0.7+0.08*__cn_sel} KP={80u-12u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05"
+      },
+      "pmos_tox": {
+        "type": "pmos",
+        "vto": [
+          -0.7,
+          -0.08
+        ],
+        "kp": [
+          0.00004,
+          -0.000006
+        ],
+        "gamma": 0.4,
+        "phi": 0.7,
+        "lambda": 0.05,
+        "source": ".model pmos_tox PMOS LEVEL=1 VTO={-0.7-0.08*__cn_sel} KP={40u-6u*__cn_sel} GAMMA=0.4 PHI=0.7 LAMBDA=0.05"
+      }
+    },
+    "excluded": []
+  },
+  "targets": [
+    "assets/spice-simulation-surface-Dua32hSB.js"
+  ],
+  "repairs": [
+    {
+      "id": "region-runtime",
+      "file": "assets/spice-simulation-surface-Dua32hSB.js",
+      "why": "Injects the parameter table and the four functions that turn a device record into one line of text. Without this the callsite below would reference a function that does not exist and every Operating Point render would throw.",
+      "marker": "var rgTable = {",
+      "requires": "var Ht=``;function Ut({devices:e}){",
+      "edits": [
+        {
+          "find": "var Ht=``;function Ut({devices:e}){",
+          "replace": "var rgTable = {\"nmos_rvt\":{\"type\":\"nmos\",\"vto\":[0.5,0.08],\"kp\":[0.0002,-0.00003],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05},\"pmos_rvt\":{\"type\":\"pmos\",\"vto\":[-0.5,-0.08],\"kp\":[0.0001,-0.000015],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05},\"nmos_nat\":{\"type\":\"nmos\",\"vto\":[0,0.08],\"kp\":[0.0002,-0.00003],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05},\"nmos_dep\":{\"type\":\"nmos\",\"vto\":[-0.7,0.08],\"kp\":[0.0002,-0.00003],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05},\"nmos_hvt\":{\"type\":\"nmos\",\"vto\":[0.7,0.08],\"kp\":[0.0002,-0.00003],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05},\"pmos_hvt\":{\"type\":\"pmos\",\"vto\":[-0.7,-0.08],\"kp\":[0.0001,-0.000015],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05},\"nmos_tox\":{\"type\":\"nmos\",\"vto\":[0.7,0.08],\"kp\":[0.00008,-0.000012],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05},\"pmos_tox\":{\"type\":\"pmos\",\"vto\":[-0.7,-0.08],\"kp\":[0.00004,-0.000006],\"gamma\":0.4,\"phi\":0.7,\"lambda\":0.05}};\nfunction rgFmt(v) {\n  let m = Math.abs(v);\n  return m === 0 ? `0 V` : m < 1e-3 ? `${(v * 1e6).toPrecision(4)} µV` : m < 1 ? `${(v * 1e3).toPrecision(4)} mV` : `${v.toPrecision(4)} V`;\n}\nfunction rgModel(docs, dev) {\n  for (let doc of docs ?? []) {\n    if (doc.id !== dev.documentId) continue;\n    for (let inst of doc.instances ?? []) if (inst.id === dev.instanceId) return inst.netlist?.binding?.name ?? null;\n  }\n  return null;\n}\nfunction rgDevice(dev, sel, docs) {\n  let model = rgModel(docs, dev);\n  if (model === null) return null;\n  let p = rgTable[model];\n  if (!p) return null;\n  let vgs = null, vds = null, vbs = null;\n  for (let v of dev.values ?? []) {\n    if (v.status !== `available`) continue;\n    if (v.parameter === `vgs`) vgs = v.value;\n    else if (v.parameter === `vds`) vds = v.value;\n    else if (v.parameter === `vbs`) vbs = v.value;\n  }\n  if (typeof vgs !== `number` || typeof vds !== `number` || typeof vbs !== `number`) return null;\n  let s = p.type === `pmos` ? -1 : 1;\n  let VGS = s * vgs, VDS = s * vds, VBS = s * vbs;\n  let VTO = s * (p.vto[0] + p.vto[1] * sel);\n  let PSI = p.phi - VBS;\n  if (!(PSI > 0)) return null;\n  let VTH = VTO + p.gamma * (Math.sqrt(PSI) - Math.sqrt(p.phi));\n  let VOV = VGS - VTH;\n  if (!(VOV > 0)) return `Region  Cutoff · Vov = ${rgFmt(VOV)}`;\n  if (Math.abs(VDS - VOV) <= 0.02 * Math.abs(VOV)) return `Region  At the edge of saturation · Vov ≈ VDS = ${rgFmt(VDS)}`;\n  return VDS < VOV ? `Region  Linear · Vov = ${rgFmt(VOV)} > VDS = ${rgFmt(VDS)}` : `Region  Saturation · VDS = ${rgFmt(VDS)} ≥ Vov = ${rgFmt(VOV)}`;\n}\nfunction rgAnnotate(project, run) {\n  let section = run?.result?.metadata?.configuration?.modelLibrary?.section;\n  let sel = section === null || section === undefined || section === `` || section === `tt` ? 0 : section === `ss` ? 1 : section === `ff` ? -1 : null;\n  let devices = run?.outputData?.deviceOperatingPoints ?? [];\n  if (sel === null) return devices;\n  let docs = project?.documents ?? [];\n  return devices.map((dev) => {\n    let line = rgDevice(dev, sel, docs);\n    return line === null ? dev : { ...dev, region: line };\n  });\n}\nvar Ht=``;function Ut({devices:e}){"
+        }
+      ]
+    },
+    {
+      "id": "region-row",
+      "file": "assets/spice-simulation-surface-Dua32hSB.js",
+      "why": "Draws the line. The runtime defines the text but nothing renders it; a device with no `region` property (every refusal path) renders exactly the card this app had before.",
+      "marker": "simulation-device-region",
+      "requires": "function Ut({devices:e}){",
+      "edits": [
+        {
+          "find": "},void 0,!1,{fileName:Ht,lineNumber:24},this)]},e.id,!0,",
+          "replace": "},void 0,!1,{fileName:Ht,lineNumber:24},this),e.region?(0,T.jsxDEV)(`p`,{className:`simulation-device-region`,children:e.region},void 0,!1,{fileName:Ht,lineNumber:31},this):null]},e.id,!0,"
+        }
+      ]
+    },
+    {
+      "id": "region-callsite",
+      "file": "assets/spice-simulation-surface-Dua32hSB.js",
+      "why": "Feeds the annotated device list to the card. `n` is the project and `u` the run, both already in scope where the card is created; untouched, the card receives the raw device list and the row repair above has nothing to draw.",
+      "marker": "devices:rgAnnotate(n,u)",
+      "requires": "(0,T.jsxDEV)(Ut,",
+      "edits": [
+        {
+          "find": "(0,T.jsxDEV)(Ut,{devices:u.outputData.deviceOperatingPoints??[]},void 0,!1,{fileName:$,lineNumber:1556},this)",
+          "replace": "(0,T.jsxDEV)(Ut,{devices:rgAnnotate(n,u)},void 0,!1,{fileName:$,lineNumber:1556},this)"
+        }
+      ]
+    }
+  ]
+}

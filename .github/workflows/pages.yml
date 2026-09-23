@@ -67,6 +67,17 @@ jobs:
       # same loop going unstable by a full 180 degrees.
       - name: Cross-check the stability margins against closed forms
         run: node scripts/stability-margin.oracle.mjs
+      # The same shape for a READING rather than a measurement: the region
+      # annotator is lifted back out of the shipped chunk and run against
+      # level-1 closed forms written out in the harness itself. Its sharpest
+      # assertions are that the region is decided by the SAME parameters the
+      # engine solved against -- the reported region's own drain-current formula
+      # reproduces the engine's number to 1e-9 relative and the other one misses
+      # it by a factor of four -- and that a PMOS is the mirror of an NMOS rather
+      # than a separate code path, which is what catches a sign flip that was
+      # dropped because the numbers still looked plausible.
+      - name: Cross-check the operating regions against level-1 closed forms
+        run: node scripts/region-annotate.oracle.mjs
       # The guard above classifies every outbound target the artifact can reach
       # (scripts/outbound-manifest.json). That is a statement about text: a
       # repair that is present but inert -- a comparison that never runs -- would
@@ -171,6 +182,20 @@ jobs:
       # browser and runs in the smoke job below.
       - name: Prove the stability-margin check is not vacuous (mutation test)
         run: node scripts/stability-margin.negctl.mjs --static-only
+      # Check 19 (inside the artifact guard above) reads a table that is NOT in
+      # the run at all: the deck carries an .include plus a corner selector and no
+      # .model line, no LEVEL and no VTO, so the LEVEL=1 parameters exist only in
+      # models/cmos.lib and the artifact carries a copy this check re-derives from
+      # the library. These mutants move a parameter, drop a model from the library,
+      # exclude a model the library still declares, revert the callsite that hands
+      # the card its annotated list, drop each of the five clauses that make a
+      # reading trustworthy, and paste the table into the artifact-schema chunk --
+      # where the closed metric enum, declared twice, would make the client discard
+      # the WHOLE result file and take every measurement with it. Two controls run
+      # the other way: an unmutated tree must be clean, and a tree that does not
+      # draw the card at all must leave this check silent.
+      - name: Prove the operating-region check is not vacuous (mutation test)
+        run: node scripts/region-annotate.negctl.mjs
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -391,5 +416,17 @@ jobs:
       # renders a refusal would control nothing.
       - name: Prove the stability-margin check is not vacuous (browser mutation test)
         run: node scripts/stability-margin.negctl.mjs --require
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      # The static half can prove the table, the row element and the callsite are
+      # all in the artifact and wired to each other. It cannot prove a line reaches
+      # the screen: "the row is rendered exactly once" is a statement about text.
+      # This step opens the Operating Point tab on the shipped lab, requires the
+      # text the artifact's own function computes to be the text the card renders,
+      # and reconciles the parameters behind that line with the drain current the
+      # engine actually produced -- so a row that renders the right words from the
+      # wrong numbers is caught too.
+      - name: The operating region line reaches the screen
+        run: node scripts/region-annotate.mjs
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
