@@ -79,7 +79,7 @@ const injected = surface.slice(from, to);
 const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(injected + '\n', sandbox);
-const { rgTable, rgDevice, rgAnnotate } = sandbox;
+const { rgTable, rgDevice, rgAnnotate, rgModel } = sandbox;
 if (!rgTable || typeof rgDevice !== 'function' || typeof rgAnnotate !== 'function') {
   console.error('the injected runtime did not define rgTable/rgDevice/rgAnnotate');
   process.exit(2);
@@ -243,6 +243,51 @@ if (shownDev && state && state.found && state.devices && state.devices.length) {
 }
 
 console.log('');
+// PMOS coverage. The arithmetic branch is proven in the oracle (4/4 sign flips),
+// and the nmos model LOOKUP is proven above against the live schematic. The one
+// link never exercised on a real device is the PMOS branch end-to-end. The
+// runnable example loads as a single NMOS plus passives (the diagnostic dump
+// below shows the runtime schematic, which is the ground truth -- a static
+// payload scan that disagrees with it is the scan that is wrong), and the PMOS
+// examples are locked and several use sky130 BSIM models that the table
+// deliberately refuses. So we prove the PMOS path with a SYNTHETIC instance that
+// carries a real pmos table entry and feeds the EXACT runtime the artifact
+// ships (rgModel -> rgDevice), rather than guessing which locked example is
+// annotatable. The on-screen render of a pmos line is the same code path as the
+// nmos line already proven (one field, one class, polarity absorbed into the
+// bias), so a correct lookup + arithmetic is sufficient.
+const docs = (state && state.found) ? state.documents : null;
+if (docs) {
+  const dump = [];
+  for (const d of docs) for (const inst of d.instances || []) {
+    const b = inst.netlist && inst.netlist.binding;
+    dump.push({ documentId: d.id, instanceId: inst.id, name: b ? b.name : '<no binding>', deviceClass: b ? b.deviceClass : '<none>', inTable: !!(b && b.name && rgTable[b.name]) });
+  }
+  console.log('  [diag] runtime schematic instances (' + dump.length + '):');
+  for (const x of dump) console.log('    ' + x.instanceId + '  name=' + JSON.stringify(x.name) + '  class=' + JSON.stringify(x.deviceClass) + '  inTable=' + x.inTable);
+  const all = dump.filter((x) => x.inTable);
+  check('every schematic MOS instance resolves its model through the card lookup', all.length > 0 && all.every((x) => rgModel(docs, { documentId: x.documentId, instanceId: x.instanceId }) === x.name), all.length + ' resolvable: ' + all.map((x) => x.name).join(', '));
+}
+// Synthetic PMOS path: a real pmos entry from the table, a real binding name,
+// real bias magnitudes. This is the same lookup+arithmetic the card uses.
+const pmosModel = Object.keys(rgTable).find((k) => rgTable[k].type === 'pmos');
+if (pmosModel) {
+  const synthDocs = [{ id: 'doc-pmos', instances: [{ id: 'X1', netlist: { binding: { name: pmosModel, deviceClass: 'mos' } } }] }];
+  const synthRec = { documentId: 'doc-pmos', instanceId: 'X1', values: [
+    { parameter: 'vgs', status: 'available', value: -0.8 },
+    { parameter: 'vds', status: 'available', value: -0.05 },
+    { parameter: 'vbs', status: 'available', value: 0 },
+  ] };
+  check('a PMOS binding name resolves through the same rgModel lookup', rgModel(synthDocs, { documentId: 'doc-pmos', instanceId: 'X1' }) === pmosModel, pmosModel);
+  const line = rgDevice(synthRec, 0, synthDocs);
+  check('a PMOS device is judged by the PMOS branch (vgs=-0.8, vds=-0.05 -> Linear)', /^Region\s+Linear/.test(line || ''), JSON.stringify(line));
+  const p = rgTable[pmosModel];
+  const noFlip = (() => { let s = 1, VGS = s * -0.8, VDS = s * -0.05, VBS = 0; let VTO = s * p.vto[0]; let PSI = p.phi - VBS; if (!(PSI > 0)) return 'refused'; let VTH = VTO + p.gamma * (Math.sqrt(PSI) - Math.sqrt(p.phi)); let VOV = VGS - VTH; return VOV > 0 ? (VDS < VOV ? 'Linear' : 'Saturation') : 'Cutoff'; })();
+  check('without the PMOS sign flip the same numbers would be misjudged', noFlip !== 'Linear', 'no-flip would say ' + noFlip + '; with flip says Linear');
+} else {
+  skip('a PMOS device is judged by the PMOS branch', 'no pmos entry in rgTable');
+}
+
 console.log(failed === 0 ? 'RESULT: all ' + report.length + ' checks passed' + (skipped ? ' (' + skipped + ' skipped)' : '') : 'RESULT: ' + failed + ' of ' + report.length + ' checks FAILED');
 console.log('  site = ' + SITE);
 finish(REQUIRE && failed ? 1 : 0);
