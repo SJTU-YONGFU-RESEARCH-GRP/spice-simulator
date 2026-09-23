@@ -58,6 +58,7 @@ node scripts/example-outcomes.negctl.mjs --require
 node scripts/shell-cache.mjs
 node scripts/shell-cache.negctl.mjs --static-only
 node scripts/corner-sweep.negctl.mjs
+node scripts/corner-mapping.negctl.mjs
 node scripts/spice-import.mjs --require
 node scripts/spice-import.negctl.mjs
 node scripts/gallery-shim.mjs --require
@@ -78,7 +79,8 @@ or `npm run check:artifacts` / `npm run smoke` / `npm run check:storage` /
 `npm run check:margin` / `npm run check:margin:neg:static` /
 `npm run check:margin:browser` /
 `npm run check:region` / `npm run check:region:neg` /
-`npm run check:region:browser`.
+`npm run check:region:browser` /
+`npm run check:cornermap` / `npm run check:cornermap:neg`.
 
 `npm run audit:ux` is **not a guard** and never fails a build. It walks the
 flows a person takes -- the home page, the Gallery panel at both unlock tiers,
@@ -238,6 +240,19 @@ shapes everything about it:
 - **The model name is read, never guessed.** The device is resolved through
   `documentId` + `instanceId` into the schematic instance's
   `netlist.binding.name`; a device whose binding cannot be found refuses.
+- **The corner the annotation reads must be the corner the deck emitted.** The
+  annotation turns `section` into a numeric selector with its *own* ternary, and
+  the deck emitter turns the same `section` into `.param __cn_sel` with a
+  *different* ternary. The D3 feasibility write-up (`analysis/60_improvements/
+  SPICE-Simulator-D3-工作区标注可行性-2026-09-23.md`, §3.3) named this as an
+  unguarded risk: if either side drifts — the emitter swaps `ss` and `ff`, or
+  `tt` stops mapping to `0` — every device is annotated against the wrong process
+  corner with no error, by the corner's own spread (about ±33 % for this
+  library's `VTO`/`KP`). Check 20 re-derives both maps from the shipped chunks
+  and requires them to agree with each other *and* with the canonical {-1, 0,
+  +1}; `corner-mapping.negctl.mjs` proves it is not vacuous by flipping `ss`/`ff`
+  on each side, flipping both together, and breaking `tt`, and requiring each
+  drift to be named while the unmutated tree stays clean.
 
 Two channels again. `region-annotate.oracle.mjs` lifts the injected runtime out of
 the shipped chunk, builds operating points structurally (`VDS = Vov/2` must be
@@ -414,6 +429,7 @@ anything — so a preview cannot tell you whether the worker works. Pass
 | `region-annotate.oracle.mjs` | Is the region **right**? The injected runtime is a source fragment rather than a module, so it is lifted out of the shipped bytes and compiled there, then run against structurally built operating points (`VDS = Vov/2` must be linear, `VDS = 2·Vov` must be saturated) and an independently written body-effect expression. Its sharpest assertion is an *identity*: the drain-current formula implied by the region the row claims reproduces the current the engine produced — 5.2e-10 relative on the shipped lab, while the other region's formula misses it by a factor of four. Also pins the corner map, the PMOS mirror, six refusal paths, and that the run's device list is not mutated in place. |
 | `region-annotate.mjs` | Does the region reach the **screen**? Drives a real browser to the Operating Point tab on the shipped lab and requires the text the artifact's own function computes to be the text the card renders — character for character, so a row rendering the right words from the wrong numbers is caught — then reads the corner out of the run and reconciles the parameters behind that line with the engine's own drain current. Needs a real browser; it is a runtime channel, like `stability-margin.mjs`. |
 | `region-annotate.negctl.mjs` | Would check 19 and that channel **notice**? Nineteen cases against real copies, opening with two controls pointing in opposite directions (an unmutated patched tree, which must be clean, and the manifest reversed, which must name its own list of keys). Then: one table parameter moved, a model dropped from the library, a LEVEL=1 model added to the exclusion list — the one place a model can leave the table without the set comparison noticing — the callsite reverted to the raw device list (patched, hashed and inert: the shape that made an earlier import repair a no-op), each of the five clauses dropped in turn, and the table pasted into the schema chunk through **both** arms of the leak rule. Plus three manifest cases (a required clause missing, a hand-edited parameter, a path that is not there) and a tree whose card is gone entirely, where the check must go quiet. |
+| `corner-mapping.negctl.mjs` | Would check 20 **notice**? Six cases against real patched copies, opening with two controls: an unmutated tree that must stay clean, and a tree with `rgAnnotate` removed, which must report the feature `absent` rather than as a parse failure. Then four mutants of the corner→selector map that the region annotation reads (`function rgAnnotate`, in the surface chunk) against the map the deck emitter writes (`src-CMkpkg0p.js`, into `__cn_sel`): `ss`/`ff` swapped on the emitter, `ss`/`ff` swapped on the annotation, both swapped together, and `tt` made to emit `__cn_sel=1`. The first two prove the check watches each side on its own; the third proves the side-to-side comparison is not doing all the work — both sides still agree, yet both disagree with the canonical {-1, 0, +1} map — and the fourth proves `tt`, the corner every default setup uses, is guarded too. Each mutant must be named for its own corner. |
 
 All of these run in CI: the source-level checks on the deploy job, before `site/`
 is published; the browser checks on the `smoke` job.

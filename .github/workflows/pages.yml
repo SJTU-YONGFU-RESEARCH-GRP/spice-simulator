@@ -196,6 +196,19 @@ jobs:
       # draw the card at all must leave this check silent.
       - name: Prove the operating-region check is not vacuous (mutation test)
         run: node scripts/region-annotate.negctl.mjs
+      # Check 20 (inside the artifact guard above) ties the corner selector the
+      # operating-region annotation READS to the __cn_sel selector the deck
+      # EMITTER writes: two independently written ternaries that were never
+      # cross-checked. If either drifts -- the emitter swaps ss and ff, or tt
+      # stops mapping to 0 -- the region line is annotated against the wrong
+      # process corner with no error (the D3 feasibility write-up, section 3.3,
+      # named this exact risk and noted it had zero guarding). This step flips
+      # ss/ff on the emitter, flips ss/ff on the annotation, flips both together,
+      # and breaks tt, and requires each drift to be named -- with a control tree
+      # that must stay clean, so a check that always fails cannot pass for a
+      # working one.
+      - name: Prove the corner-mapping check is not vacuous (mutation test)
+        run: node scripts/corner-mapping.negctl.mjs
       - name: Publish site/ to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:

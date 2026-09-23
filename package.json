@@ -59,9 +59,11 @@
     "check:margin:browser:fixture": "node scripts/stability-margin.mjs --fixture=center-magnitude",
     "build:region": "node scripts/region-annotate.manifest.cjs",
     "patch:region": "node scripts/patch-outbound.mjs --manifest=scripts/region-annotate.json",
-    "check:region": "node scripts/check-artifacts.mjs && node scripts/region-annotate.oracle.mjs",
-    "check:region:neg": "node scripts/region-annotate.negctl.mjs",
-    "check:region:browser": "node scripts/region-annotate.mjs",
+  "check:region": "node scripts/check-artifacts.mjs && node scripts/region-annotate.oracle.mjs",
+  "check:region:neg": "node scripts/region-annotate.negctl.mjs",
+  "check:region:browser": "node scripts/region-annotate.mjs",
+  "check:cornermap": "node scripts/check-artifacts.mjs",
+  "check:cornermap:neg": "node scripts/corner-mapping.negctl.mjs",
     "audit:ux": "node scripts/ux-audit.mjs"
   }
 }

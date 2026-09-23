@@ -2965,6 +2965,120 @@ function checkRegionAnnotation(site, manifestPath) {
   return out;
 }
 
+// Check 20 -- the corner selector the ANNOTATION reads must be the SAME selector
+// the DECK EMITTER writes.
+//
+// D3 (MOS operating-point region annotation) annotates each device against
+// LEVEL=1 parameters that depend on the process corner: VTO and KP are offset by
+// __cn_sel = {-1, 0, +1} (see site/models/cmos.lib). The annotation side
+// (rgAnnotate, in the spice-simulation-surface chunk) turns the run's `section`
+// into a numeric selector with its OWN ternary; the deck emitter
+// (src-CMkpkg0p.js) turns the same `section` into __cn_sel with a DIFFERENT
+// ternary. The two are written independently and never cross-checked. If either
+// drifts -- the emitter swaps ss and ff, or the annotation's `tt` stops mapping
+// to 0 -- the annotation silently reads the wrong corner's parameters and prints
+// a region that is wrong by the corner's process spread (about +/-33% for this
+// library's VTO/KP) with no error. The D3 feasibility write-up (analysis/
+// 60_improvements/SPICE-Simulator-D3-工作区标注可行性-2026-09-23.md, section 3.3)
+// names this exact risk and notes it had zero guarding. This check closes it:
+// it re-derives the corner->selector map from both sides and requires them to
+// agree with each other AND with the canonical {-1, 0, +1}.
+function checkCornerMapping(site) {
+  const out = { status: 'checked', metrics: [], findings: [], notes: [] };
+  const assetsDir = join(site, 'assets');
+  if (!existsSync(assetsDir)) {
+    out.status = 'absent';
+    out.notes.push('no assets/ in this tree');
+    return out;
+  }
+  const surfaces = readdirSync(assetsDir).filter((f) => /^spice-simulation-surface-.*\.js$/.test(f));
+  const deckName = 'src-CMkpkg0p.js';
+  const deckPath = join(assetsDir, deckName);
+  if (!surfaces.length) {
+    out.status = 'absent';
+    out.notes.push('no spice-simulation-surface chunk in this tree');
+    return out;
+  }
+  if (!existsSync(deckPath)) {
+    out.status = 'absent';
+    out.notes.push('no ' + deckName + ' in this tree');
+    return out;
+  }
+  const surface = readFileSync(join(assetsDir, surfaces[0]), 'utf8');
+  const deck = readFileSync(deckPath, 'utf8');
+
+  // Applicability. The annotation mapping only exists in a tree that carries the
+  // region-annotation repair. Without it there is no 'sel' to disagree with the
+  // deck, so the check goes quiet -- it must not fire on a tree that never had
+  // the feature (red line 17: a new check must not ring on someone else's
+  // synthetic tree).
+  if (!/function\s+rgAnnotate/.test(surface)) {
+    out.status = 'absent';
+    out.notes.push('this tree carries no rgAnnotate, so the annotation side of the corner map does not exist');
+    return out;
+  }
+
+  const CANON = { tt: 0, ss: 1, ff: -1 };
+
+  // --- parse the annotation side -------------------------------------------
+  const annMap = {};
+  {
+    const re = /section\s*===\s*`(tt|ss|ff)`\s*\?\s*(-?\d+)/g;
+    let m;
+    while ((m = re.exec(surface))) annMap[m[1]] = Number(m[2]);
+  }
+  if (!['tt', 'ss', 'ff'].every((c) => typeof annMap[c] === 'number')) {
+    out.findings.push({
+      key: 'corner-map:annotation-shape', ref: surfaces[0],
+      notes: ['the annotation corner->selector map could not be parsed from rgAnnotate',
+        'rgAnnotate encodes section->sel with a ternary that changed shape; re-anchor this check against the new expression'],
+    });
+    return out;
+  }
+
+  // --- parse the deck emitter side -----------------------------------------
+  const deckMap = {};
+  {
+    const ttM = deck.match(/c===`tt`\)([^;]*)/);
+    if (ttM) {
+      const cn = ttM[1].match(/__cn_sel=(-?\d+)/);
+      deckMap.tt = cn ? Number(cn[1]) : 0;
+    }
+    const ssM = deck.match(/c===`ss`\?(-?\d+)/);
+    const ffM = deck.match(/c===`ff`\?(-?\d+)/);
+    if (ssM) deckMap.ss = Number(ssM[1]);
+    if (ffM) deckMap.ff = Number(ffM[1]);
+  }
+  if (!['tt', 'ss', 'ff'].every((c) => typeof deckMap[c] === 'number')) {
+    out.findings.push({
+      key: 'corner-map:deck-shape', ref: deckName,
+      notes: ['the deck emitter corner->selector map could not be parsed from the section->__cn_sel ternary',
+        'src-CMkpkg0p.js encodes the selector with a ternary that changed shape; re-anchor this check against the new expression'],
+    });
+    return out;
+  }
+
+  out.metrics.push('annotation=' + JSON.stringify(annMap) + ' deck=' + JSON.stringify(deckMap));
+
+  // --- the only assertion that matters --------------------------------------
+  for (const c of ['tt', 'ss', 'ff']) {
+    const a = annMap[c], d = deckMap[c], k = CANON[c];
+    if (a !== k || d !== k || a !== d) {
+      out.findings.push({
+        key: 'corner-map:' + c,
+        ref: c + ' corner',
+        notes: [
+          'corner ' + c + ': annotation reads selector ' + a + ', deck emits selector ' + d + ', canonical is ' + k,
+          a !== d
+            ? 'the two sides DISAGREE -- a ' + c + ' simulation would be annotated against the wrong corner\'s parameters (silent ' + (c === 'ss' || c === 'ff' ? 'ss<->ff swap' : 'tt drift') + ')'
+            : 'both sides agree but deviate from the canonical {-1,0,+1} map, so every ' + c + ' simulation is annotated against the wrong process corner',
+        ],
+      });
+    }
+  }
+  return out;
+}
+
 function checkServiceWorkerCache(site) {
   const swPath = join(site, 'sw.js');
   if (!existsSync(swPath)) {
@@ -3263,6 +3377,7 @@ async function main() {
   const exampleIdentity = checkExampleIdentity(site);
   const margins = checkStabilityMargin(site, marginPath);
   const region = checkRegionAnnotation(site, regionPath);
+  const cornerMap = checkCornerMapping(site);
   const jsxFactoryList = jsxFactory
     .filter((r) => r.failures.length > 0)
     .map((r) => ({
@@ -3283,7 +3398,7 @@ async function main() {
     escapedList, missingList, externalList, jsxList, shellList, jsxFactoryList,
     jsxSites.findings, egress.findings, storage.findings, csp.findings,
     swcache.findings, shellCache.findings, corner.findings, importLibs.findings,
-    gallery.findings, exampleIdentity.findings, margins.findings, region.findings,
+    gallery.findings, exampleIdentity.findings, margins.findings, region.findings, cornerMap.findings,
   ];
   for (const list of lists) {
     for (const f of list) {
@@ -3568,9 +3683,27 @@ async function main() {
     }
   }
 
+  if (cornerMap.findings.length > 0) {
+    push('');
+    push('20. corner mapping consistency (annotation <-> deck emitter)');
+    push(...render(cornerMap.findings, 'corner mapping findings', null, accepted));
+  } else {
+    push('');
+    push('20. corner mapping consistency (annotation <-> deck emitter)');
+    push('   (D3 reads the process corner from the run metadata with one ternary and the deck emitter');
+    push('    writes it as __cn_sel with a SEPARATE ternary; the two are never cross-checked, so a drift');
+    push('    annotates every device against the wrong corner with no error. This re-derives both maps');
+    push('    and requires them to agree and to match the canonical {-1, 0, +1}.)');
+    if (cornerMap.status === 'checked' && cornerMap.findings.length === 0) {
+      push('  ok  ' + (cornerMap.metrics.join('; ') || 'both sides agree and match the canonical {-1,0,+1} map'));
+    } else {
+      push('  --  ' + cornerMap.notes.join('; '));
+    }
+  }
+
   if (stale.length > 0) {
     push('');
-    push('20. stale accepted deviations');
+    push('21. stale accepted deviations');
     push(...render(stale, 'accepted entries that matched nothing', null, () => false));
   }
 
@@ -3679,6 +3812,12 @@ async function main() {
         metrics: region.metrics,
         findings: region.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
         notes: region.notes,
+      },
+      cornerMapping: {
+        status: cornerMap.status,
+        metrics: cornerMap.metrics,
+        findings: cornerMap.findings.map((f) => ({ key: f.key, ref: f.ref, notes: f.notes })),
+        notes: cornerMap.notes,
       },
       outbound: {
         manifest: outboundPath,
