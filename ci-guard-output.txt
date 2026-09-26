@@ -1,0 +1,220 @@
+artifact guard
+  site = /home/runner/work/spice-simulator/spice-simulator/site
+  base = /spice-simulator/
+  accepted = /home/runner/work/spice-simulator/spice-simulator/scripts/known-deviations.json (9 entry)
+  outbound = /home/runner/work/spice-simulator/spice-simulator/scripts/outbound-manifest.json
+  csp      = /home/runner/work/spice-simulator/spice-simulator/scripts/shell-csp.json
+  precache = /home/runner/work/spice-simulator/spice-simulator/scripts/precache-budget.json
+  corner   = /home/runner/work/spice-simulator/spice-simulator/scripts/corner-sweep.json
+  import   = /home/runner/work/spice-simulator/spice-simulator/scripts/import-libs.json
+  gallery  = /home/runner/work/spice-simulator/spice-simulator/scripts/gallery-shim.json
+  margin   = /home/runner/work/spice-simulator/spice-simulator/scripts/stability-margin.json
+  region   = /home/runner/work/spice-simulator/spice-simulator/scripts/region-annotate.json
+  scanned 53 text files, 12300 KiB
+
+1. references escaping the deployed base
+   (the named file exists inside site/, so the request must be missing a base prefix)
+  ok  escaped references: none
+
+2. references carrying the base that do not resolve
+  FAIL  unresolvable in-base references (32)
+    /spice-simulator/assets/KaTeX_AMS-Regular-BQhdFMY1.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @91
+    /spice-simulator/assets/KaTeX_Caligraphic-Bold-Dq_IR9rO.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @267
+    /spice-simulator/assets/KaTeX_Caligraphic-Regular-Di6jR-x-.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @448
+    /spice-simulator/assets/KaTeX_Fraktur-Bold-CL6g_b3V.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @628
+    /spice-simulator/assets/KaTeX_Fraktur-Regular-CTYiF6lA.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @801
+    /spice-simulator/assets/KaTeX_Main-Bold-Cx986IdX.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @1147
+    /spice-simulator/assets/KaTeX_Main-BoldItalic-DxDJ3AOS.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @974
+    /spice-simulator/assets/KaTeX_Main-Italic-NWA7e6Wa.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @1314
+    /spice-simulator/assets/KaTeX_Main-Regular-B22Nviop.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @1483
+    /spice-simulator/assets/KaTeX_Math-BoldItalic-CZnvNsCZ.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @1653
+    /spice-simulator/assets/KaTeX_Math-Italic-t53AETM-.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @1826
+    /spice-simulator/assets/KaTeX_SansSerif-Bold-D1sUS0GD.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @2000
+    /spice-simulator/assets/KaTeX_SansSerif-Italic-C3H0VqGB.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @2177
+    /spice-simulator/assets/KaTeX_SansSerif-Regular-DDBCnlJ7.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @2356
+    /spice-simulator/assets/KaTeX_Script-Regular-D3wIWfF6.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @2533
+    /spice-simulator/assets/KaTeX_Size1-Regular-mCD8mA8B.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @2706
+    /spice-simulator/assets/KaTeX_Size2-Regular-Dy4dx90m.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @2878
+    /spice-simulator/assets/KaTeX_Size4-Regular-Dl5lxZxV.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @8019
+    /spice-simulator/assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2
+      at assets/mathlive-fonts-DqCP_FQL.css @8196
+    /spice-simulator/assets/google-sans-code-adlam-wght-normal-DMKbyh18.woff2
+      at assets/index-BsICFfPz.css @109
+    /spice-simulator/assets/google-sans-code-latin-ext-wght-normal-Cxz4iEe8.woff2
+      at assets/index-BsICFfPz.css @17198
+    /spice-simulator/assets/google-sans-code-latin-wght-normal-BLCTwao7.woff2
+      at assets/index-BsICFfPz.css @17596
+    /spice-simulator/assets/google-sans-code-math-wght-normal-BmC33yrp.woff2
+      at assets/index-BsICFfPz.css @5894
+    /spice-simulator/assets/google-sans-code-symbols-wght-normal-DYh2i20j.woff2
+      at assets/index-BsICFfPz.css @9474
+    /spice-simulator/assets/google-sans-code-symbols2-wght-normal-B9bgzW0v.woff2
+      at assets/index-BsICFfPz.css @11089
+    /spice-simulator/assets/google-sans-code-vietnamese-wght-normal-DxxfW2pt.woff2
+      at assets/index-BsICFfPz.css @16844
+    /spice-simulator/assets/index-7P_aude7.js
+      at 404.html @1305
+      at index.html @1305
+    /spice-simulator/assets/index-BsICFfPz.css
+      at 404.html @1608
+      at index.html @1608
+    /spice-simulator/assets/jsx-dev-runtime-DuB4xY43.js
+      at 404.html @1509
+      at index.html @1509
+    /spice-simulator/assets/rolldown-runtime-CbXtAM7H.js
+      at 404.html @1406
+      at index.html @1406
+    /spice-simulator/models/cmos.lib
+      at assets/src-CMkpkg0p.js @65401
+    /spice-simulator/vendor/ngspice.js
+      at assets/src-CMkpkg0p.js @62641
+
+4. JSX runtime
+  ok  jsx-dev-runtime findings: 20 known deviation(s) accepted
+    assets/jsx-dev-runtime-DuB4xY43.js   <- accepted: the artifact ships a development JSX runtime (jsxDEV) in a chunk named jsx-dev-runtime-*.js; the editor source that would emit jsx-runtime is not present in any public repository (docs/REPO_LAYOUT.md:17). The chunk's body was hand-repaired on 2026-09-19 to React's production element semantics (ref kept on props); the real fix is a build-config change in that private editor checkout. [P0-2 / A3]
+    404.html   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/App-D0jgYDVz.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/browser-pdf-DUd_AOAz.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/cell-manager-dialog-DJciZ6wz.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/connect-agent-panel-CLDuXA5M.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/editor-help-dialog-RJLiWGB5.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/index-7P_aude7.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/insert-component-dialog-O6mHZSvK.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/instance-table-dialog-g98ZL-tK.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/netlist-preflight-dialog-BoWFR2Nb.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/new-testbench-dialog-D-ds9B6e.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/project-search-dialog-DeiKSOBw.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/publish-gallery-dialog-ClAQ8lrL.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/recent-recovery-dialog-DppHW-NT.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/spice-simulation-surface-Dua32hSB.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/symbol-artwork-Cj_Q3ynF.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    assets/version-history-dialog-CJ-rf98t.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    index.html   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+    sw.js   <- accepted: same single deviation: every chunk compiled against the development JSX transform imports that chunk by name [P0-2 / A3]
+
+5. service-worker shell assets
+   (every URL shellUrls() names exists, and the atomic install payload fits its budget)
+  ok  all 5 precache targets exist; 105.8 KiB of 128.0 KiB budget
+          1717 B  ./
+           634 B  manifest.webmanifest
+         44726 B  logo.png
+          2595 B  favicon.png
+         58647 B  icon-192.png
+
+6. JSX runtime chunk is executable
+   (imported and called; a jsxDEV of void 0 passes every string test)
+  ok  1 chunk(s) imported and exercised
+
+7. example-library unlock gate
+   (the id -> Project resolver is lifted out of the bundle and run)
+  ok  1 chunk(s): a locked example needs the stored unlock
+
+8. JSX call sites compiled to (void 0)
+   (a factory folded to undefined; imports and check 6 stay green)
+  ok  42 chunk(s): every call site has its factory
+
+9. outbound egress
+   (every network target in this tree is classified in scripts/outbound-manifest.json, and every declared repair is present)
+  FAIL  outbound findings (2)
+    bug-report-link [assets/index-7P_aude7.js]
+      at the file this repair applies to is not in this tree
+    ngspice-cdn-integrity [assets/src-CMkpkg0p.js]
+      at the file this repair applies to is not in this tree
+      pin re-derived: sha256:b285fc2d5b19135e... == site/vendor/ngspice.js (and the declared repairs embed the same value)
+
+10. storage access resilience
+   (reading localStorage/sessionStorage throws outright when the browser denies storage, so every read needs a try/catch around it)
+  ok  unguarded storage access: 7 known deviation(s) accepted
+    assets/App-D0jgYDVz.js@673751   <- accepted: All seven accepted unguarded storage reads are on the agent-relay session path: they pass bare `window.localStorage` into the relay's own helpers (Jy/qy/Yy), which call removeItem/setItem/getItem on it. Every one sits downstream of a guard on the relay flag (`if(!e.enabled)return`, `if(e.enabled)`) with the session object as the only key (`t.current`). `publicAgentUiEnabled` occurs exactly once in the whole artifact -- as Ux's own prop default `=!1` -- and no caller passes it, so `e.enabled` is false and these branches never execute here; the static Pages deploy also has no `/api/agent/sessions` backend (see docs/REPO_LAYOUT.md: the relay is a separate hosted service). They were deliberately left unpatched rather than hand-fixed: repairing them means rewriting session-token code that this environment cannot exercise end to end, which is a worse trade than a recorded, visible gap. The byte offsets are positions in the artifact as repaired by scripts/import-libs.json (which grows the chunk by 7653 bytes ahead of these sites); a rebuild or any further patch shifts them, at which point these entries go stale and check 10 reports the sites again for review -- which is the intended behaviour of an acceptance list, not a false alarm. It did exactly that when the import repair landed, and the offsets below were re-derived rather than re-used. [B9 / agent-relay]
+    assets/App-D0jgYDVz.js@673842   <- accepted: same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here [B9 / agent-relay]
+    assets/App-D0jgYDVz.js@683213   <- accepted: same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here [B9 / agent-relay]
+    assets/App-D0jgYDVz.js@683494   <- accepted: same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here [B9 / agent-relay]
+    assets/App-D0jgYDVz.js@686435   <- accepted: same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here [B9 / agent-relay]
+    assets/App-D0jgYDVz.js@687045   <- accepted: same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here [B9 / agent-relay]
+    assets/App-D0jgYDVz.js@687424   <- accepted: same accepted class: agent-relay session path, downstream of the `e.enabled` guard, unreachable here [B9 / agent-relay]
+
+11. shell Content-Security-Policy
+   (both shell documents must carry the policy, the policy must still be the manifest's, every inline script's hash is re-derived from the document, and no origin may be named that the outbound manifest does not classify)
+  ok  2 shell document(s) carry an enforced policy
+      inline script hash re-derived from index.html: 'sha256-HNwf/9JV/vUpJrpchZQL+HkGb4bJH895PsHm3EoIoFI=' (271 bytes)
+      inline script hash re-derived from 404.html: 'sha256-HNwf/9JV/vUpJrpchZQL+HkGb4bJH895PsHm3EoIoFI=' (271 bytes)
+      origin https://cdn.jsdelivr.net is classified in the outbound manifest
+
+12. service worker cache contract
+   (the response stored by cache.put() must be a clone taken before respondWith() takes the body, and the engine payload -- which arrives by fetch(), with an empty destination -- must be routed on the runtime path rather than precached at install)
+  FAIL  service worker cache findings (2)
+    models/
+      the worker caches nothing, so offline simulation depends on the browser HTTP cache
+      at declared as engine payload but no non-empty models/ in this tree
+    vendor/
+      the worker caches nothing, so offline simulation depends on the browser HTTP cache
+      at declared as engine payload but no non-empty vendor/ in this tree
+
+13. shell cache invalidation token
+   (the constant sw.js opens its cache under must describe THIS tree: upstream's build derives it from the emitted asset graph, a committed artifact whose repairs keep their filenames has nothing left to derive it from, and the static route is cache-first with no revalidation -- so a stale constant hides every hand-patch from every returning client)
+  ok  icm-static-shell-e0527df870b5 covers 86 file(s) / 13165.2 KiB, 5 precache item(s), 2 payload dir(s)
+      3 file(s) fall outside them and are not hashed: LICENSE.md, NOTICE.md, release-manifest.json
+      tree 157e55c7c2b2, declarations 00e9706fada0
+      derived icm-static-shell-e0527df870b5, declared icm-static-shell-e0527df870b5
+
+14. process corner selection
+   (the profile the panel reads must advertise the corners, the deck emitter must map each of them to a selector, and the model library must answer that selector -- a tree with the controls but not the library offers three corners that all return the typical answer)
+  --  this tree carries neither the corner controls nor the corner library
+
+15. import library reachability
+   (the File menu's Import SPICE control is a flat multi-file picker, so a selection cannot express a directory -- the include resolver still has to answer the libraries this build ships. A tree with the control but without the pool refuses .include ../models/<lib>, which is what cap.lib and opamp.lib both instruct their readers to write)
+  --  no assets/App-D0jgYDVz.js in this tree
+
+16. static gallery shim
+   (the Gallery panel reads four origin-root endpoints that only a server answers, so on a static deploy its fetches fail and the section never renders. A worker registered at scope /spice-simulator/ still observes those requests -- scope decides which clients it controls, not which of their requests it sees -- and scripts/gallery-shim.json routes them to files under <scope>gallery/. A tree with the panel but no route leaves the panel dark; a route defined after the /api/ early return is dark with every one of its strings still present)
+  ok  4 route(s) ["/api/gallery","/api/gallery/tags","/api/gallery/<id>","/api/gallery/<id>/preview.svg"] answered from "gallery/", id shape-checked before it is joined into a path, answers only (writes no Cache Storage)
+
+17. built-in example identity
+  ok  5 example(s) carry their own project id/name, none stores the factory placeholder (project-main / New Circuit)
+
+18. stability margins
+   (the evaluator must be CALLED, not merely defined; both metric names must be members of the
+    artifact schema's CLOSED metric enum in BOTH variants -- a result file carrying a metric the
+    schema does not enumerate is discarded whole, and the panel then shows no measurements at all;
+    each row must be emitted with its own unit; a refusal must carry its reason; the five
+    properties that make the number correct must hold; the margin must be measured on the same
+    curve the plot draws; and neither AUTHORING table may offer the metrics, because the setup
+    schema's method union cannot represent them)
+  --  no assets/src-CMkpkg0p.js in this tree
+
+19. MOS operating region annotation
+   (the per-device card must carry a region line derived from the SAME LEVEL=1 parameters the
+    engine solved against -- those live only in models/cmos.lib, never in prepared.cir or the
+    result, so the table is parsed into the artifact and this check re-derives it from the
+    library; the row must be rendered by a callsite that is handed the annotated list, not
+    merely defined; a refusal must still exist for every device the reading cannot be trusted
+    about; and the table must NOT reach the artifact-schema chunk, whose metric enum is closed
+    and declared twice -- one unlisted name there discards the WHOLE result file)
+  --  this tree has no assets/spice-simulation-surface-Dua32hSB.js
+
+20. corner mapping consistency (annotation <-> deck emitter)
+   (D3 reads the process corner from the run metadata with one ternary and the deck emitter
+    writes it as __cn_sel with a SEPARATE ternary; the two are never cross-checked, so a drift
+    annotates every device against the wrong corner with no error. This re-derives both maps
+    and requires them to agree and to match the canonical {-1, 0, +1}.)
+  ok  annotation={"tt":0,"ss":1,"ff":-1} deck={"tt":0,"ss":1,"ff":-1}
+
+RESULT: 36 finding(s)   (27 known deviation(s) accepted)
