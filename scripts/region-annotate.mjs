@@ -93,7 +93,10 @@ const srv = spawn(NODE, [join(REPO, 'scripts/serve-local.mjs'), '--port=' + PORT
 let srvOut = ''; srv.stdout.on('data', (d) => { srvOut += d; }); srv.stderr.on('data', (d) => { srvOut += d; });
 for (let i = 0; i < 40; i++) { try { const r = await fetch('http://127.0.0.1:' + PORT + '/spice-simulator/'); if (r.ok) break; } catch {} await sleep(300); }
 
-const CHROME = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const CHROME = process.env.CHROME_BIN || process.env.CHROME_PATH
+  || ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser']
+    .find((p) => existsSync(p))
+  || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 if (!existsSync(CHROME)) { console.error('no chrome at ' + CHROME + '; set CHROME_PATH'); try { srv.kill(); } catch {} process.exit(2); }
 const profile = mkdtempSync(join(TMP, 'rg-'));
 const chrome = spawn(CHROME, ['--headless=new', '--disable-gpu', '--no-sandbox', '--mute-audio', '--user-data-dir=' + profile, '--remote-debugging-port=' + DP, '--no-first-run', '--no-default-browser-check', '--window-size=1600,1000', 'about:blank'], { stdio: ['ignore', 'pipe', 'pipe'] });

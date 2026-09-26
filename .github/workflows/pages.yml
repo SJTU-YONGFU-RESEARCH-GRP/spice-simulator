@@ -44,18 +44,6 @@ jobs:
           node scripts/check-artifacts.mjs --accept=scripts/known-deviations.json 2>&1 | tee "$RUNNER_TEMP/guard-output.txt"
           status=${PIPESTATUS[0]}
           cat "$RUNNER_TEMP/guard-output.txt" >> "${GITHUB_STEP_SUMMARY}"
-          if [ "$status" -ne 0 ]; then
-            # DIAGNOSTIC (temporary): job logs need admin auth to download, so a
-            # failing guard commits its own output to the branch it ran on. The
-            # paths filter on this workflow excludes a root-level .txt, so this
-            # commit does not re-trigger the run. Remove once the failure is fixed.
-            cp "$RUNNER_TEMP/guard-output.txt" ci-guard-output.txt
-            git config user.name "ci-diagnostics-bot"
-            git config user.email "noreply@users.noreply.github.com"
-            git add ci-guard-output.txt
-            git commit -m "ci: capture failing artifact-guard output (diagnostic)"
-            git push origin "HEAD:${GITHUB_REF_NAME}" || true
-          fi
           exit $status
       # Static guard + browser smoke prove the bundle loads and runs; neither
       # checks whether the NUMBERS are correct. This step drives the shipped
