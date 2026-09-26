@@ -284,12 +284,12 @@ function checkBaseRefs(site, base, strict) {
         if (base === '/') return;
         const inner = ref.slice(base.length);
         if (inner === '') return;
-        if (!existsSync(join(site, inner.split('/').join('\\')))) unbracket(missing, ref);
+        if (!existsSync(join(site, inner))) unbracket(missing, ref);
         return;
       }
 
       // Root-absolute without the base prefix.
-      const body = ref.slice(1).split('/').join('\\');
+      const body = ref.slice(1);
       const target = join(site, body);
       if (existsSync(target) && statSync(target).isFile()) unbracket(escaped, ref);
       else if (strict) unbracket(external, ref);
@@ -371,7 +371,7 @@ function checkShellAssets(site, budgetPath) {
   let total = 0;
   for (const raw of listed) {
     const target = raw === './' ? 'index.html' : raw;
-    const p = join(site, target.split('/').join('\\'));
+    const p = join(site, target);
     if (!existsSync(p)) { missing.push(raw); continue; }
     const bytes = statSync(p).size;
     sizes.push({ raw, bytes });
@@ -975,7 +975,7 @@ function checkOutboundEgress(site, manifestPath) {
   }
 
   for (const repair of repairs) {
-    const path = join(site, repair.file.split('/').join('\\'));
+    const path = join(site, repair.file);
     const label = repair.id + ' [' + repair.file + ']';
     if (!existsSync(path)) {
       out.findings.push({
@@ -1223,7 +1223,7 @@ function checkShellCsp(site, cspManifestPath, outboundManifestPath) {
 
   const policiesSeen = [];
   for (const file of documents) {
-    const path = join(site, file.split('/').join('\\'));
+    const path = join(site, file);
     if (!existsSync(path)) {
       // A declared shell document that is not here cannot be carrying a policy.
       // Reported, never skipped: a tree that lost its 404 page should say so
@@ -1494,7 +1494,7 @@ function checkCornerSweep(site, manifestPath) {
     }
   };
   const readAt = (rel) => {
-    const path = join(site, rel.split('/').join('\\'));
+    const path = join(site, rel);
     return existsSync(path) ? readFileSync(path, 'utf8') : null;
   };
 
@@ -1778,7 +1778,7 @@ function checkImportLibs(site, manifestPath) {
     out.notes.push('the import manifest declares no usable contract, so nothing here would be verified');
     return out;
   }
-  const chunkPath = join(site, String(contract.chunk).split('/').join('\\'));
+  const chunkPath = join(site, String(contract.chunk));
   if (!existsSync(chunkPath)) {
     out.status = 'absent';
     out.notes.push('no ' + contract.chunk + ' in this tree');
@@ -1812,7 +1812,7 @@ function checkImportLibs(site, manifestPath) {
   // --- 1. both repairs are in place ------------------------------------------
   for (const repair of repairs) {
     const label = repair.id ?? '(unnamed)';
-    const file = join(site, String(repair.file).split('/').join('\\'));
+    const file = join(site, String(repair.file));
     if (!existsSync(file)) {
       out.findings.push({ key: 'import-repair-file-absent:' + label, ref: String(repair.file), notes: ['the file this repair edits is not in this tree'] });
       continue;
@@ -1872,7 +1872,7 @@ function checkImportLibs(site, manifestPath) {
       for (const entry of parsed) if (entry && typeof entry.name === 'string') embedded.set(entry.name, String(entry.text ?? ''));
 
       for (const decl of contract.libraries) {
-        const libPath = join(site, 'models', String(decl.name).split('/').join('\\'));
+        const libPath = join(site, 'models', String(decl.name));
         if (!existsSync(libPath)) {
           out.findings.push({ key: 'import-lib-missing:' + decl.name, ref: 'models/' + decl.name, notes: ['the manifest says this build ships this library; the tree does not have it'] });
           continue;
@@ -1996,7 +1996,7 @@ function checkGalleryShim(site, manifestPath) {
     });
     return out;
   }
-  const swPath = join(site, String(contract.file).split('/').join('\\'));
+  const swPath = join(site, String(contract.file));
   if (!existsSync(swPath)) {
     out.status = 'absent';
     out.notes.push('no ' + contract.file + ' in this tree');
@@ -2426,7 +2426,7 @@ function checkStabilityMargin(site, manifestPath) {
     return out;
   }
 
-  const pathOf = (rel) => join(site, String(rel).split('/').join('\\'));
+  const pathOf = (rel) => join(site, String(rel));
   const executorPath = pathOf(executorRel);
   const surfacePath = pathOf(surfaceRel);
   const schemaPath = pathOf(schemaRel);
@@ -2477,7 +2477,7 @@ function checkStabilityMargin(site, manifestPath) {
   for (const repair of repairs) {
     const label = repair.id ?? '(unnamed)';
     const rel = String(repair.file);
-    const file = join(site, rel.split('/').join('\\'));
+    const file = join(site, rel);
     if (!existsSync(file)) {
       out.findings.push({
         key: 'margin-repair-file-absent:' + label, ref: rel,
@@ -2832,8 +2832,8 @@ function checkRegionAnnotation(site, manifestPath) {
     return out;
   }
 
-  const surfacePath = join(site, String(contract.surfaceFile).split('/').join('\\'));
-  const libraryPath = join(site, String(contract.libraryFile).split('/').join('\\'));
+  const surfacePath = join(site, String(contract.surfaceFile));
+  const libraryPath = join(site, String(contract.libraryFile));
   if (!existsSync(surfacePath) || !existsSync(libraryPath)) {
     out.status = 'absent';
     out.notes.push('this tree has no ' + (existsSync(surfacePath) ? contract.libraryFile : contract.surfaceFile));
@@ -3231,7 +3231,7 @@ function checkServiceWorkerCache(site) {
       findings.push({ key: 'sw-payload-empty', ref: 'sw.js', notes: ['ENGINE_PAYLOAD_DIRS lists nothing'] });
     }
     for (const dir of dirs) {
-      const full = join(site, dir.split('/').join('\\'));
+      const full = join(site, dir);
       let nonEmpty = false;
       try { nonEmpty = statSync(full).isDirectory() && readdirSync(full).length > 0; } catch { nonEmpty = false; }
       if (!nonEmpty) {
