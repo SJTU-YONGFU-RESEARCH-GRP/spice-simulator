@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 646" width="100%" role="img" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+  <title>Verification methodology: four layers, one gate</title>
+  <desc>A change lands in the site bytes. Four independent layers then gate it: artifact guards check the shipped bytes statically, oracles recompute the numbers from first principles, negative controls mutate a copy and require the guard to go red, and browser channels drive the artifact in headless Chrome. CI publishes only when all four pass.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      .node { cursor: default; transition: opacity .16s ease; }
+      #stage:hover .node:not(:hover) { opacity: .35; }
+      .node:hover rect { stroke-width: 1.6; }
+      .detail { opacity: 0; transition: opacity .16s ease; }
+      .node:hover .detail { opacity: 1; }
+      .cap { font-size: 12px; fill: #444441; font-weight: 400; }
+    </style>
+  </defs>
+
+  <g id="stage">
+    <text x="40" y="46" font-size="15" font-weight="500" fill="#2C2C2A">Verification methodology</text>
+    <text x="40" y="66" font-size="13" font-weight="400" fill="#5F5E5A">A change lands, then four independent layers gate it before anything is published.</text>
+
+    <g class="node" fill="#E6F1FB" stroke="#185FA5">
+      <title>Artifact guards: 21 static checks read straight off the bytes that will be served</title>
+      <rect x="40" y="88" width="392" height="82" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+      <text x="64" y="114" font-size="14" font-weight="500" fill="#0C447C" dominant-baseline="central">Artifact guards</text>
+      <text x="64" y="137" font-size="12" font-weight="400" fill="#185FA5" dominant-baseline="central">21 static checks on the bytes that ship</text>
+      <text x="64" y="159" font-size="11" font-weight="400" fill="#185FA5" dominant-baseline="central" class="detail">Sharpest: a metric outside the closed enum discards the whole result file.</text>
+      <text class="cap" x="456" y="110" dominant-baseline="central">The bytes the browser</text>
+      <text class="cap" x="456" y="128" dominant-baseline="central">will fetch are coherent:</text>
+      <text class="cap" x="456" y="146" dominant-baseline="central">references · CSP · cache</text>
+      <text class="cap" x="456" y="164" dominant-baseline="central">contract · closed enums</text>
+    </g>
+    <path d="M236 170 L236 198" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+    <g class="node" fill="#E6F1FB" stroke="#185FA5">
+      <title>Oracles recompute the shipped numbers from first principles, in a separately written implementation</title>
+      <rect x="40" y="198" width="392" height="82" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+      <text x="64" y="224" font-size="14" font-weight="500" fill="#0C447C" dominant-baseline="central">Oracles</text>
+      <text x="64" y="247" font-size="12" font-weight="400" fill="#185FA5" dominant-baseline="central">recomputed from first principles</text>
+      <text x="64" y="269" font-size="11" font-weight="400" fill="#185FA5" dominant-baseline="central" class="detail">Sharpest: the same loop with an inverting stage must report the same margin.</text>
+      <text class="cap" x="456" y="220" dominant-baseline="central">The numbers are right,</text>
+      <text class="cap" x="456" y="238" dominant-baseline="central">re-derived by a second</text>
+      <text class="cap" x="456" y="256" dominant-baseline="central">implementation: level 1–4,</text>
+      <text class="cap" x="456" y="274" dominant-baseline="central">inversion invariance</text>
+    </g>
+    <path d="M236 280 L236 308" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+    <g class="node" fill="#FAEEDA" stroke="#854F0B">
+      <title>Negative controls mutate a copy of the tree and require the guard to name the mutation</title>
+      <rect x="40" y="308" width="392" height="82" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+      <text x="64" y="334" font-size="14" font-weight="500" fill="#633806" dominant-baseline="central">Negative controls</text>
+      <text x="64" y="357" font-size="12" font-weight="400" fill="#854F0B" dominant-baseline="central">mutate a copy, require red</text>
+      <text x="64" y="379" font-size="11" font-weight="400" fill="#854F0B" dominant-baseline="central" class="detail">A guard that cannot be shown to notice its own breakage is not a guard.</text>
+      <text class="cap" x="456" y="330" dominant-baseline="central">The guards can fail.</text>
+      <text class="cap" x="456" y="348" dominant-baseline="central">A check that only ever prints</text>
+      <text class="cap" x="456" y="366" dominant-baseline="central">PASS proves nothing about</text>
+      <text class="cap" x="456" y="384" dominant-baseline="central">the thing it guards</text>
+    </g>
+    <path d="M236 390 L236 418" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+    <g class="node" fill="#FAEEDA" stroke="#854F0B">
+      <title>Browser channels drive the shipped artifact in headless Chrome</title>
+      <rect x="40" y="418" width="392" height="82" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="0.5"/>
+      <text x="64" y="444" font-size="14" font-weight="500" fill="#633806" dominant-baseline="central">Browser channels</text>
+      <text x="64" y="467" font-size="12" font-weight="400" fill="#854F0B" dominant-baseline="central">headless Chrome, the shipped build</text>
+      <text x="64" y="489" font-size="11" font-weight="400" fill="#854F0B" dominant-baseline="central" class="detail">Sharpest: the first margin patch passed every guard while the panel showed nothing.</text>
+      <text class="cap" x="456" y="440" dominant-baseline="central">It runs, and what it computes</text>
+      <text class="cap" x="456" y="458" dominant-baseline="central">reaches the screen — not</text>
+      <text class="cap" x="456" y="476" dominant-baseline="central">merely that the text is</text>
+      <text class="cap" x="456" y="494" dominant-baseline="central">present in the bundle</text>
+    </g>
+    <path d="M236 500 L236 528" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+    <g class="node" fill="#E1F5EE" stroke="#0F6E56">
+      <title>CI publishes only when all four layers are green</title>
+      <rect x="40" y="528" width="392" height="82" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
+      <text x="64" y="554" font-size="14" font-weight="500" fill="#085041" dominant-baseline="central">CI gate</text>
+      <text x="64" y="577" font-size="12" font-weight="400" fill="#0F6E56" dominant-baseline="central">two jobs, published only if all four pass</text>
+      <text x="64" y="599" font-size="11" font-weight="400" fill="#0F6E56" dominant-baseline="central" class="detail">A green build means four unrelated things are green at once.</text>
+      <text class="cap" x="456" y="550" dominant-baseline="central">Static and oracle in the</text>
+      <text class="cap" x="456" y="568" dominant-baseline="central">deploy job; browser behaviour</text>
+      <text class="cap" x="456" y="586" dominant-baseline="central">in the smoke job. Neither</text>
+      <text class="cap" x="456" y="604" dominant-baseline="central">covers what the other sees.</text>
+    </g>
+  </g>
+</svg>

@@ -236,7 +236,9 @@ UX defect can pass every guard, which is why it exists.
 | Document | What it covers |
 |---|---|
 | [`README.md`](./README.md) | This file — overview, features, architecture, layout, getting started. |
-| [`docs/VERIFICATION.md`](./docs/VERIFICATION.md) | **The verification harness**: command set, the three-layer method, the per-patch narratives, and the full guard/tool catalog. The technical heart of the project. |
+| [`CHANGELOG.md`](./CHANGELOG.md) | Every improvement grouped by version, with the commit that made it and the version it landed under. |
+| [`docs/VERIFICATION.md`](./docs/VERIFICATION.md) | **The verification harness**: command set, the four-layer method, the per-patch narratives, and the full guard/tool catalog. The technical heart of the project. |
+| [`docs/verification-methodology.svg`](./docs/verification-methodology.svg) | The same method as a diagram: four layers, one gate. Interactive hover states; open the file in a browser. |
 | [`docs/REPO_LAYOUT.md`](./docs/REPO_LAYOUT.md) | Public/private dual-repo layout, publish flow, privacy model. |
 | [`docs/PRIVATE_LAB_BOOTSTRAP.md`](./docs/PRIVATE_LAB_BOOTSTRAP.md) | Checklist for standing up the private lab repo (`spice-simulator-lab`). |
 | [`lab-sync-worker/README.md`](./lab-sync-worker/README.md) | The optional Cloudflare Worker used for lab backup on Save/Export. |

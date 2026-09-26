@@ -85,6 +85,10 @@ The token is *derived*, not chosen — see below.
 No single check can be trusted on its own. The harness is built so that each
 claim is witnessed by at least two channels that do **not** contain each other.
 
+[`docs/verification-methodology.svg`](./verification-methodology.svg) draws the
+same four layers as a diagram — what each one gates, and the sharpest assertion
+each one is judged on.
+
 1. **Artifact guards — `check-artifacts.mjs` (21 static checks).** Run in the CI
    **deploy** job, before `site/` is published. They read the shipped bytes
    directly: do references resolve, is there no development JSX runtime or
