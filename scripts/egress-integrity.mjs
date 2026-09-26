@@ -161,7 +161,7 @@ async function main() {
     return 2;
   }
 
-  const chunkPath = join(args.site, repair.file.split('/').join('\\'));
+  const chunkPath = join(args.site, repair.file);
   if (!existsSync(chunkPath)) {
     console.error('chunk not found: ' + chunkPath);
     return 2;

@@ -217,7 +217,7 @@ const UNPATCHED = join(work, 'unpatched-site');
   try { cpSync(copy, UNPATCHED, { recursive: true }); }
   catch (e) { fail('cannot copy for the unpatched tree: ' + e.message); }
   for (const repair of manifestText.repairs ?? []) {
-    const path = join(UNPATCHED, repair.file.split('/').join('\\'));
+    const path = join(UNPATCHED, repair.file);
     let text = readFileSync(path, 'utf8');
     for (const [i, edit] of (repair.edits ?? []).entries()) {
       const seen = text.split(edit.replace).length - 1;
@@ -269,7 +269,7 @@ for (const c of CASES) {
   let setup = null;
   try {
     for (const [file, find, replace, n] of c.tree ?? []) {
-      const path = join(copy, file.split('/').join('\\'));
+      const path = join(copy, file);
       const text = readFileSync(path, 'utf8');
       saved.set(path, text);
       const seen = count(text, find);

@@ -174,7 +174,7 @@ const SCHEMA = CONTRACT.schemaFile;
 if (!EXECUTOR || !SURFACE || !SCHEMA) {
   die('the manifest names no executorFile/surfaceFile/schemaFile, so the anchors below have no home');
 }
-if (!existsSync(join(SITE, EXECUTOR.split('/').join('\\')))) {
+if (!existsSync(join(SITE, EXECUTOR))) {
   die('not a patched site tree (' + SITE + '): ' + EXECUTOR + ' is not there. Pass --site=<dir>.');
 }
 
@@ -401,7 +401,7 @@ const count = (text, needle) => {
 let editsChecked = 0;
 let markersChecked = 0;
 for (const repair of manifestJson.repairs ?? []) {
-  const path = join(copy, repair.file.split('/').join('\\'));
+  const path = join(copy, repair.file);
   if (!existsSync(path)) die('the manifest names ' + repair.file + ', which the tree does not have');
   const text = readFileSync(path, 'utf8');
   for (const [i, edit] of (repair.edits ?? []).entries()) {
@@ -466,7 +466,7 @@ const UNPATCHED = join(work, 'unpatched-site');
   catch (e) { die('cannot copy for the unpatched tree: ' + e.message); }
   let reversed = 0;
   for (const repair of manifestJson.repairs ?? []) {
-    const path = join(UNPATCHED, repair.file.split('/').join('\\'));
+    const path = join(UNPATCHED, repair.file);
     let text = readFileSync(path, 'utf8');
     for (const [i, edit] of (repair.edits ?? []).entries()) {
       const seen = count(text, edit.replace);
@@ -559,7 +559,7 @@ for (const c of selected) {
     let manifestPath = MANIFEST;
 
     for (const [file, find, replace] of c.edits ?? []) {
-      const path = join(copy, file.split('/').join('\\'));
+      const path = join(copy, file);
       if (!saved.has(path)) saved.set(path, readFileSync(path, 'utf8'));
       const text = readFileSync(path, 'utf8');
       const seen = count(text, find);
@@ -583,7 +583,7 @@ for (const c of selected) {
     // The mutation must actually have changed the tree, or this case would
     // "pass" because nothing was mutated.
     if ((c.edits ?? []).length) {
-      const path = join(copy, (c.edits[0][0]).split('/').join('\\'));
+      const path = join(copy, (c.edits[0][0]));
       if (readFileSync(path, 'utf8') === saved.get(path)) throw new Error('the mutation changed nothing');
     }
 

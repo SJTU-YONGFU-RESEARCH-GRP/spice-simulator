@@ -68,7 +68,7 @@ if (!existsSync(assetsDir)) die('no assets/ under ' + SITE);
 const surfaces = readdirSync(assetsDir).filter((f) => /^spice-simulation-surface-.*\.js$/.test(f));
 if (!surfaces.length) die('no spice-simulation-surface chunk under ' + assetsDir);
 const SURFACE = 'assets/' + surfaces[0];
-const surfacePath = join(SITE, SURFACE.split('/').join('\\'));
+const surfacePath = join(SITE, SURFACE);
 if (!readFileSync(surfacePath, 'utf8').includes('function Nt({measurements:e}){')) {
   die('the tree at ' + SITE + ' has no Measurements panel (function Nt); pass a patched --site=<dir>');
 }
@@ -124,7 +124,7 @@ function restore() {
 }
 
 function applyEdit(root, file, find, replace) {
-  const p = join(root, file.split('/').join('\\'));
+  const p = join(root, file);
   if (!existsSync(p)) die('mutation target is not in the tree: ' + file);
   snapshot(p);
   const before = readFileSync(p, 'utf8');

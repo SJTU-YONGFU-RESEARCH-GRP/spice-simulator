@@ -181,7 +181,7 @@ function restore() {
 }
 
 function applyEdit(root, file, find, replace) {
-  const p = join(root, file.split('/').join('\\'));
+  const p = join(root, file);
   if (!existsSync(p)) die('mutation target is not in the tree: ' + file);
   snapshot(p);
   const before = readFileSync(p, 'utf8');

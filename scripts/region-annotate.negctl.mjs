@@ -167,8 +167,8 @@ const LIBRARY = C.libraryFile;
 const TABLE = String(C.tableMarker) + String(C.tableLiteral) + ';';
 const TABLE_MARKER = String(C.tableMarker);
 
-const surfacePath = join(SITE, SURFACE.split('/').join('\\'));
-const libraryPath = join(SITE, LIBRARY.split('/').join('\\'));
+const surfacePath = join(SITE, SURFACE);
+const libraryPath = join(SITE, LIBRARY);
 if (!existsSync(surfacePath)) {
   die('not a patched site tree (' + SITE + '): ' + SURFACE + ' is not there. Pass --site=<dir>.');
 }
@@ -353,7 +353,7 @@ function restore() {
 }
 
 function applyEdit(root, file, find, replace, append) {
-  const p = join(root, file.split('/').join('\\'));
+  const p = join(root, file);
   if (!existsSync(p)) die('mutation target is not in the tree: ' + file);
   snapshot(p);
   const before = readFileSync(p, 'utf8');

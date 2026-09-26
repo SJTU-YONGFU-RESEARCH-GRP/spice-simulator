@@ -81,7 +81,7 @@ if (shellUrls.length === 0) { console.error('precache-weight: sw.js names no pre
 const disk = new Map();
 for (const raw of shellUrls) {
   const file = raw === './' ? 'index.html' : raw;
-  const p = join(SITE, file.split('/').join('\\'));
+  const p = join(SITE, file);
   disk.set(raw, existsSync(p) ? statSync(p).size : null);
 }
 

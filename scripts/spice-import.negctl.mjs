@@ -155,7 +155,7 @@ for (const m of MUTATIONS) {
   mkdirSync(dir, { recursive: true });
   cpSync(SITE, dir, { recursive: true });
 
-  const target = join(dir, CHUNK.split('/').join('\\'));
+  const target = join(dir, CHUNK);
   const before = readFileSync(target, 'utf8');
   let after;
   try { after = m.mutate(before); } catch (e) {

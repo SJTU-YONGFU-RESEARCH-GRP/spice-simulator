@@ -143,7 +143,7 @@ function buildTree(dir, manifest, { defect = null, engineMutation = null, engine
   const engine = (manifest.repairs ?? []).find((r) => r.id === 'ngspice-cdn-integrity');
   let body;
   if (engineFrom === 'real') {
-    const real = join(REPO_ROOT, 'site', ENGINE_FILE.split('/').join('\\'));
+    const real = join(REPO_ROOT, 'site', ENGINE_FILE);
     if (!existsSync(real)) throw new Error('the committed artifact is missing: ' + real);
     body = mutateEngine(readFileSync(real, 'utf8'), engineMutation);
   } else if (defect === 'repair-lost') {

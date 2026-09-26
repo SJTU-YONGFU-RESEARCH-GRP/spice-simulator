@@ -149,7 +149,7 @@ function main() {
   const touched = [];
 
   for (const repair of repairs) {
-    const path = join(args.site, repair.file.split('/').join('\\'));
+    const path = join(args.site, repair.file);
     const label = repair.id + ' [' + repair.file + ']';
     if (!existsSync(path)) {
       problems.push(label + ': file not in this tree');
