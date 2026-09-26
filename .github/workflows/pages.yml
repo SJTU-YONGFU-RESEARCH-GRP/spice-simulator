@@ -41,7 +41,6 @@ jobs:
       # finding -- so the list cannot outlive what it describes.
       - name: Guard published artifact references
         run: |
-          set -o pipefail
           node scripts/check-artifacts.mjs --accept=scripts/known-deviations.json 2>&1 | tee "$RUNNER_TEMP/guard-output.txt"
           status=${PIPESTATUS[0]}
           cat "$RUNNER_TEMP/guard-output.txt" >> "${GITHUB_STEP_SUMMARY}"
