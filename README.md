@@ -245,6 +245,48 @@ UX defect can pass every guard, which is why it exists.
 
 ---
 
+## Roadmap
+
+Where this is heading, in the order the work is actually gated. Items under
+**deferred** are decisions recorded with their reasons, not gaps.
+
+**Next**
+
+- **Cut releases on a cadence.** v0.3.0 is the first release that carries the
+  verification harness. From here a release is one command
+  (`./scripts/release.sh <version>`) plus the version-file companion commit,
+  with the guard green and the changelog moved out of `[Unreleased]`.
+- **Prove the BSIM numbers or scope them down.** The numeric cross-check
+  guarantees linear circuits, MOS LEVEL-1–4 and diodes against closed forms;
+  BSIM3/4 absolute accuracy is currently **unproven** and labelled as such
+  rather than implied.
+- **A real corner story.** The shipped `tt`/`ss`/`ff` are teaching corners over
+  LEVEL-1 models. They must not stand in for foundry corners: a genuine corner
+  set (SKY130) needs a server-side container, which a static deploy cannot
+  reach by architecture, not by effort.
+
+**Deferred, with reasons**
+
+- **E1 — electrical ERC.** One warning-level check; the source guidance says
+  defer it.
+- **D3-b — canvas annotation of operating regions.** Judged not worth the
+  extra channel yet; the Operating Point card carries the reading (Slice 2).
+- **A reproducible artifact.** The biggest structural limitation: `site/`
+  cannot be rebuilt from any public source today. The remedy is publishing the
+  editor's build configuration — a decision about the private checkout, not
+  about this repository.
+- **The upstream JSX runtime fix.** The accepted deviation class
+  (`jsx-dev-file:*`) exists because the build emits a development runtime; the
+  real fix is that same build-config change.
+
+**Open, awaiting a call**
+
+- **License unification** (repo CC-BY-4.0 vs shipped UI AGPL-3.0) and
+  **brand naming** are legal/product decisions; both are tracked and frozen
+  until then rather than half-decided in code.
+
+---
+
 ## Contributing
 
 This repo receives build output, not editor source, so direct source PRs do not

@@ -7,26 +7,21 @@ here can be re-checked without a conversation.
 This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-> ### Read this first: the work on this branch is ahead of the version number
+> ### Release process
 >
-> `VERSION` and `package.json` read **`0.2.6`**. The last commit that advanced
-> them is `e59fbba` (2026-09-10), and the manifest the site itself ships —
-> `site/release-manifest.json` — still carries
-> `"builtAt": "2026-09-10T13:50:11Z", "version": "0.2.6"`.
->
-> Everything recorded under **[Unreleased]** below landed *after* that commit
-> and has **not** been released. That is a deliberate state, not an oversight,
-> but it does mean the changelog cannot call any of it a release. To promote it,
-> run `./scripts/release.sh <version>`, which advances `VERSION`,
-> `package.json` and `site/release-manifest.json` in one commit and deploys.
+> Releases are cut with `./scripts/release.sh <version>`, which advances
+> `VERSION`, `package.json` and `site/release-manifest.json`, runs the artifact
+> guard, and tags. One note for anyone reading the history: the script's release
+> commit is scoped to `site/` only, so the version files travel in a companion
+> commit — the tag marks the release either way.
 
 ---
 
-## [Unreleased]
+## [0.3.0] — 2026-09-26
 
-The body of work between `e59fbba` (v0.2.6) and `1995b2c`. It is roughly two
-things: a verification harness that did not exist before, and the checks it
-found.
+First release to carry the verification harness. The body of work between
+`e59fbba` (v0.2.6) and this release is roughly two things: a harness that did
+not exist before, and the checks it found.
 
 ### Added — the verification harness
 
@@ -164,7 +159,7 @@ entry that stops matching as a finding in its own right. The list therefore
 cannot outlive the code it describes — a rebuild that shifts a byte offset
 resurfaces the finding rather than hiding behind it.
 
-Conventions used above: `[Unreleased]` has no date because it has no release
-date yet; commit refs are short hashes on branch `xyp`; and every "verified by"
-style claim in the tables of [`docs/VERIFICATION.md`](./docs/VERIFICATION.md)
-cites the script that re-derives it.
+Conventions used above: commit refs are short hashes on branch `xyp`; and every
+"verified by" style claim in the tables of
+[`docs/VERIFICATION.md`](./docs/VERIFICATION.md) cites the script that
+re-derives it.
