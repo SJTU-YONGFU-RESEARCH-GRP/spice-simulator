@@ -28,7 +28,17 @@
         "name": "cmos.lib",
         "sha256": "742b8ea37118598cc01867f298f0a14861369a9541fd5f069c75f6798e9a3523",
         "bytes": 3719
-      }
+      },
+      {
+        "name": "nmos_bsim3v3.ngspice",
+        "sha256": "fb8cf9ef78291bfa8af42365884f2e2f92f2fcb2779b74d432fc42d300b903e6",
+        "bytes": 2542
+      },
+      {
+        "name": "pmos_bsim3v3.ngspice",
+        "sha256": "d86a0fe34a273ae34263dcac19c6eaa471f0bdd0841d5d71c3f25373f79fab3c",
+        "bytes": 2544
+       }
     ],
     "markers": [
       "var BUILTIN_SOURCE_LIBS=[",
