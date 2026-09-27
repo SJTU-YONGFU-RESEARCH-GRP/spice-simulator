@@ -6,8 +6,9 @@
 *
 *     strtod: Invalid argument
 *
-* -- the SAME message the semicolon-dialect card produces. Two very different
-* user errors, one indistinguishable diagnostic. That is the finding this case
-* and reject-semicolon-dialect.card together record.
+* and the diagnostic names only the card's ENTIRE merged parameter line, not the
+* offending parameter -- on a real card with forty parameters that leaves the
+* user nothing to search for. This case requires the refusal, so a card that
+* loaded while meaning something other than it declares cannot pass quietly.
 .model n1 nmos level=8 vth0=0.5 u0=600 tox=9n
 + pclm=1e-12 pdibl1=0

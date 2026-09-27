@@ -282,7 +282,7 @@ function refusalReason(log) {
 }
 
 /** sqrt(Id) vs Vgs in strong inversion is a line: intercept -> VTO, slope -> KP. */
-function recover(run) {
+function recover(run, keepFrom) {
   const vi = run.variables.findIndex((v) => v === 'v(g)');
   const ii = run.variables.findIndex((v) => v === 'i(vds)');
   if (vi < 0 || ii < 0) return null;
@@ -290,8 +290,14 @@ function recover(run) {
     .map((r) => ({ vg: Number(r[vi]), id: -Number(r[ii]) }))
     .filter((d) => Number.isFinite(d.vg) && Number.isFinite(d.id) && d.id > 0);
   if (pts.length < 6) return null;
-  // Drop the low end: near threshold the square law is not the operative law.
-  const u = pts.slice(Math.floor(pts.length * CFG.recovery.keepFrom)).map((d) => [d.vg, Math.sqrt(d.id)]);
+  // Drop the low end. How much of it has to go is a property of the MODEL, not
+  // of the method: the square law is exact in deep strong inversion, and every
+  // model smooths its way in from threshold. LEVEL-1 is analytic enough to fit
+  // from mid-sweep; BSIM is not, and fitting it from mid-sweep biases the slope
+  // by several percent -- KP scales as slope^2, so that bias lands doubled on
+  // KP. Measured, not assumed: the same deck fitted from mid-sweep puts BSIM3's
+  // KP 6.6 % low.
+  const u = pts.slice(Math.floor(pts.length * keepFrom)).map((d) => [d.vg, Math.sqrt(d.id)]);
   if (u.length < 5) return null;
   const n = u.length, sx = u.reduce((s, p) => s + p[0], 0), sy = u.reduce((s, p) => s + p[1], 0);
   const sxx = u.reduce((s, p) => s + p[0] * p[0], 0), sxy = u.reduce((s, p) => s + p[0] * p[1], 0);
@@ -370,7 +376,7 @@ for (const c of contract.cases) {
     if (!run.produced) {
       checks.push({ ok: false, label: 'the card must load', detail: `refused (${refusalReason(run.log)}): ` + run.log.split('\n').filter((l) => /strtod|Fatal|Error/i.test(l)).slice(0, 2).join(' | ') });
     } else {
-      const got = recover(run);
+      const got = recover(run, c.recovery?.keepFrom ?? CFG.recovery.keepFrom);
       if (!got) {
         checks.push({ ok: false, label: 'the transfer curve must be recoverable', detail: `${run.points.length} point(s) in the rawfile` });
       } else {

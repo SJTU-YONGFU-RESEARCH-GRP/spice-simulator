@@ -24,19 +24,21 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 `scripts/model-card-intake.mjs` (`npm run check:intake`) runs model cards through
 the shipped engine and answers two questions nothing in this tree asked before.
 
-**Does a card load, and if not, why.** Three refusal modes were measured, and two
-of them are indistinguishable from the outside:
+**Does a card load, and if not, why.** Two fatal modes were measured:
 
 | the mistake | what the engine says |
 |---|---|
-| `+ VTO = 0.7 ; Threshold voltage (V)` — the HSPICE/Spectre comment dialect | `strtod: Invalid argument`, engine `exit(1)` |
-| `pdibl1=0` — a misspelled parameter name (`PDIBLC1`) | the *same* `strtod: Invalid argument` |
+| `pdibl1=0` — a parameter name the model does not know (`PDIBLC1` is correct) | `strtod: Invalid argument`, engine `exit(1)`, and the message names the card's whole merged parameter line rather than the offending parameter |
 | `pclm=0` — an out-of-range value | `Fatal: Pclm = 0 is not positive.` |
 
-Every card in `SJTU-YONGFU-RESEARCH-GRP/spice_model_collections` is written in
-that dialect, so **eight of its eight `bsim/*.ngspice` cards are refused by this
-engine — including its LEVEL-1 card**, for a model this engine certainly
-supports. Its `ptm/45nm_LP.pm` and `ptm/22nm_LP.pm` do load.
+Eight of the eight `bsim/*.ngspice` cards in
+`SJTU-YONGFU-RESEARCH-GRP/spice_model_collections` are also refused by this
+engine — including its LEVEL-1 card, for a model this engine certainly supports —
+and `ptm/180nm_bulk.pm` with them, while `ptm/45nm_LP.pm` and `ptm/22nm_LP.pm`
+load. **Why is not known.** An earlier revision of this entry attributed those
+refusals to the collection's HSPICE/Spectre comment dialect; the channel's own
+`;`-carrying fixture then *loaded* when it reached CI, so that attribution is
+withdrawn and no assertion rests on it. Isolating the real cause is open work.
 
 **Are the numbers a card produces the numbers it declares.** In strong inversion
 at constant `Vds`, `sqrt(Id)` is a straight line in `Vgs`: the intercept is the

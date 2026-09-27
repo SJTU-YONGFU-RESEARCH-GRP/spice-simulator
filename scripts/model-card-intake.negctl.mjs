@@ -24,12 +24,11 @@
  *                        reduction. If the BSIM3 case survives this, it is not
  *                        testing the model, only that a file exists.
  *
- *   card_dialect_repaired
- *                        rewrites the semicolon-dialect card into legal
- *                        ngspice carrying the SAME declared numbers. A card
- *                        that now loads and means exactly what it says must not
- *                        be reported as refused; if the refusal assertion
- *                        survives, it was vacuous.
+ *   card_param_name_repaired
+ *                        corrects the misspelling (pdibl1 -> pdiblc1), so the
+ *                        card now loads and means exactly what it says. A card
+ *                        that loads must not be reported as refused; if the
+ *                        refusal assertion survives this, it was vacuous.
  *
  *   expect_library_tt    edits the CONTRACT so the slow-corner case declares the
  *                        typical corner's VTO (0.58 -> 0.5). This is the mutant
@@ -93,18 +92,10 @@ const MUTATIONS = [
     expectCases: ['bsim3_longchannel'],
   },
   {
-    id: 'card_dialect_repaired',
-    what: 'fixture: the semicolon-dialect card is rewritten as legal ngspice carrying the same numbers, so it now loads',
-    fixture: {
-      file: 'reject-semicolon-dialect.card',
-      rewrite: [
-        '* rewritten as legal ngspice: identical declared numbers, no `;` comments',
-        '.model n1 nmos level=1',
-        '+ vto=0.7 kp=50.0e-6 gamma=0.8 phi=0.7 lambda=0.02',
-        '',
-      ].join('\n'),
-    },
-    expectCases: ['reject_semicolon_dialect'],
+    id: 'card_param_name_repaired',
+    what: 'fixture: the misspelling is corrected (pdibl1 -> pdiblc1), so the card now loads and means what it says, and the refusal assertion must fail',
+    fixture: { file: 'reject-param-name.card', from: 'pdibl1=0', to: 'pdiblc1=0', count: 1 },
+    expectCases: ['reject_param_name'],
   },
   {
     id: 'expect_library_tt',

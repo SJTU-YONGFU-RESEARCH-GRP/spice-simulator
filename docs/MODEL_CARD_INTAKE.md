@@ -92,23 +92,64 @@ What is new is parameter **recovery** and intake **classification**.
 
 ## 3. What the engine actually does with a card it cannot use
 
-Three failure modes, measured. Two of them are the same message.
+Two fatal modes, both measured. Plus one observation whose mechanism was **not**
+isolated, reported as such.
 
-### 3a. Foreign comment dialect — `token-syntax`
+### 3a. Unknown parameter name — `token-syntax`
 
-ngspice does not treat `;` as a comment. The token becomes `0.7;` and the whole
-parameter line dies in the tokenizer:
+A parameter the model does not know is not warned about and not ignored. It fails
+the whole card in the tokenizer:
 
 ```
 strtod: Invalid argument
 ERROR: fatal error in ngspice, exit(1)
 ```
 
-**Every card in
+The spelling used here is `pdibl1` for BSIM3's `PDIBLC1` — the name BSIM4/PTM
+documentation uses, so it is a natural mistake. The diagnostic names the card's
+**entire merged parameter line**, never the offending parameter:
+
+```
+Warning -- Version not specified on line "level=8 vth0=0.5 u0=600 tox=9n dvt0=0 ... voffcv=0"
+strtod: Invalid argument
+```
+
+On a card with forty parameters that leaves the user nothing to search for. This
+is the sharpest form of the intake problem: the engine refuses the card and
+cannot say which part of it is wrong.
+
+> **A correction, recorded because it was published.** An earlier revision of
+> this channel asserted that the HSPICE/Spectre comment dialect — a trailing `;`
+> on a parameter line — was a third fatal mode, and attributed the refusals in
+> `spice_model_collections` to it. **That was wrong.** The channel's own fixture
+> carrying `;` comments *loaded* when the case reached CI, so this engine
+> tolerates them. The attribution was made from a local observation of the
+> collection's files without ever running the fixture that encoded the claim;
+> the fixture was removed rather than the claim kept.
+
+### 3b. Out-of-range value — `parameter-range`
+
+`PCLM=0` is the natural way to write "no channel-length modulation". BSIM3's own
+parameter checker refuses the value, and this is the only refusal that carries a
+diagnosis:
+
+```
+Fatal: Pclm = 0 is not positive.
+Fatal error: Fatal error(s) detected during BSIM3V3.3 parameter checking for n1 in model m1
+```
+
+That is why both reduction cards carry `pclm=1e-12` rather than `0`.
+
+A milder mismatch found while reducing the cards: **BSIM4 rejects `NLX`**, which
+is BSIM3-only, through the same `strtod` path; BSIM4 plays that role with
+`lpe0`/`lpeb`.
+
+### 3c. An unresolved observation: `spice_model_collections`
+
+Every card in
 [`SJTU-YONGFU-RESEARCH-GRP/spice_model_collections`](https://github.com/SJTU-YONGFU-RESEARCH-GRP/spice_model_collections)
-is written in this dialect**, under a README that advertises the collection as
-"ready-to-use transistor models across multiple SPICE simulators including
-NGSPICE". Measured against this engine:
+was run through this engine. The repository advertises itself as "ready-to-use
+transistor models across multiple SPICE simulators including NGSPICE":
 
 | card | verdict |
 |---|---|
@@ -124,40 +165,15 @@ NGSPICE". Measured against this engine:
 | `ptm/45nm_LP.pm` | loads |
 | `ptm/22nm_LP.pm` | loads |
 
-Eight of eight BSIM cards are refused, **including the LEVEL-1 card** — for a
-model this engine certainly supports. The refusal is caused by the comment
-dialect, not by anything about the devices.
-
-### 3b. Misspelled parameter — `token-syntax`
-
-The correct BSIM3 name is `PDIBLC1`; `pdibl1` is the spelling used in BSIM4/PTM
-documentation, so it is a natural mistake. The engine does **not** warn and carry
-on — it fails the entire card:
-
-```
-strtod: Invalid argument
-```
-
-— **the same message as 3a.** A misspelled parameter and a foreign comment
-dialect are indistinguishable from the diagnostic. Neither is attributable by a
-user reading it.
-
-### 3c. Out-of-range value — `parameter-range`
-
-`PCLM=0` is the natural way to write "no channel-length modulation". BSIM3's own
-parameter checker refuses the value, and this is the only refusal that carries a
-diagnosis:
-
-```
-Fatal: Pclm = 0 is not positive.
-Fatal error: Fatal error(s) detected during BSIM3V3.3 parameter checking for n1 in model m1
-```
-
-That is why both reduction cards carry `pclm=1e-12` rather than `0`.
-
-A fourth, milder mismatch found while reducing the cards: **BSIM4 rejects `NLX`**,
-which is BSIM3-only, through the same `strtod` path; BSIM4 plays that role with
-`lpe0`/`lpeb`.
+**Eight of eight BSIM cards are refused — including the LEVEL-1 card**, for a
+model this engine certainly supports. But these cards were reduced to refusal
+classes by a local run, and the **mechanism was never isolated**: the files carry
+`;` comments *and* parameters well beyond the level they declare (`nmos_bsim3v3`
+lists `VSATCV`, `EFCI_GLOBAL` and `DELVTRAND`, which are not BSIM3 parameters),
+and a `;`-only fixture is tolerated. Which of those is responsible is **open**,
+and turning it into an assertion is deliberately left out of the channel until it
+is known — the claim that CI proved false is exactly the one that would have
+shipped if this had been asserted on a hunch.
 
 ---
 
@@ -192,6 +208,26 @@ bulk-charge (`K1`/`K2`) switch off, with `pclm=1e-12`.
   | last 50 points (`Vgs >= 0.72`) | 0.502843 |
   | *LEVEL-1 control, every window* | *0.500000* |
 
+**The window is load-bearing, and the first CI run proved it.** Fitting BSIM from
+mid-sweep — which is fine for LEVEL-1, whose law *is* the square law across the
+whole sweep — put the recovered transconductance low by a factor that lands
+doubled on KP, because `KP = 2*slope^2 / (W/L)`:
+
+| case, fitted from mid-sweep (`keepFrom` 0.35) | KP recovered | declared | error |
+|---|---|---|---|
+| `bsim3_longchannel` | 2.149541e-4 | 2.302040e-4 | −6.6 % |
+| `bsim4_longchannel` | 2.083303e-4 | 2.302040e-4 | −9.5 % |
+
+The LEVEL-1 cases and all three `shipped_library_*` cases passed in that same run,
+which is what localized the fault to the model rather than to the extraction.
+Both BSIM cases now fit **deep strong inversion only** (`keepFrom` 0.8), which is
+the regime where `Vgsteff -> Vgs - Vth` exactly and the closed form is therefore
+the operative law — a principled window, not a tuned one.
+
+The numbers quoted above and below were measured on resistive-load decks before
+this channel used the constant-`Vds` topology. They are the *shape* of the
+answer; the authoritative values are the ones each run records for itself.
+
 ### BSIM4 (level=14), long-channel limit
 
 Under the **identical** switch-off set, BSIM4 retains a transconductance residual
@@ -221,9 +257,17 @@ Stated plainly, because the difference matters:
   transconductance residual under any reduction tried here.
 - **Claimed.** The shipped `cmos.lib` behaves as the device it declares at all
   three corners, to 1e-8 relative.
-- **Claimed.** A card written in the `;` dialect, or with a misspelled
-  parameter, or with an out-of-range value, is refused by this engine — and the
-  first two are indistinguishable from the diagnostic.
+- **Claimed.** A card with a misspelled parameter, or with an out-of-range value,
+  is refused by this engine — and for the first, the diagnostic names the card's
+  whole merged parameter line rather than the offending parameter, so a user
+  cannot tell which of forty parameters is wrong.
+- **NOT claimed.** That a `;` inline comment is fatal. It is not: the channel's
+  own fixture carrying them **loaded** in CI. An earlier revision claimed the
+  opposite and attributed the `spice_model_collections` refusals to it; that is
+  corrected in section 3.
+- **NOT claimed.** Any mechanism for why `spice_model_collections`' cards are
+  refused. The refusals were observed; the cause was not isolated, and no
+  assertion rests on them.
 - **NOT claimed.** Any statement about BSIM3/4 accuracy *outside* the
   long-channel limit, or at bias points other than those exercised. The
   reduction switches second-order effects **off**; it says nothing about what
@@ -232,8 +276,8 @@ Stated plainly, because the difference matters:
   **behaviour** was measured (constant in `VTH0`, varying with `TOX` and
   temperature); its **mechanism** was not identified, and no defect is asserted.
 - **NOT claimed.** That `spice_model_collections` is wrong. Its cards are
-  refused by *this* engine because of a comment dialect; whether they are valid
-  for the simulators they were written for was not tested here.
+  refused by *this* engine; whether they are valid for the simulators they were
+  written for was not tested here.
 
 ---
 
@@ -241,40 +285,50 @@ Stated plainly, because the difference matters:
 
 - The extraction is validated against a closed form (`control_level1`) and
   against the artifact's declared parameters at three corners, both to 1e-8.
+  **All four of those cases pass in CI.**
 - The negative control builds four mutants and asserts the channel goes red for
   each one's own reason: a changed card (`card_control_vto`), a re-introduced
-  physical effect (`card_bsim3_k1_on`), a card that is no longer refusable
-  (`card_dialect_repaired`), and an expectation that no longer matches the
-  artifact (`expect_library_tt`).
-- The BSIM tolerance bounds in `model-card-intake.json` were set from
-  measurements taken on a **resistive-load** deck, before this channel used the
-  constant-`Vds` topology. They are deliberately wider than those measurements
-  and are to be **tightened against the first recorded run of this channel
-  in its own topology** — not left as a permanent hedge.
+  physical effect (`card_bsim3_k1_on`), a misspelled parameter that has been
+  corrected so the card loads (`card_param_name_repaired`), and an expectation
+  that no longer matches the artifact (`expect_library_tt`).
+- The BSIM tolerance bounds in `model-card-intake.json` are set wide of the
+  measurements quoted in section 4, because those were taken on a **resistive**
+  load before the channel used constant `Vds`. They are to be tightened against a
+  recorded run of this channel in its own topology — not left as a permanent
+  hedge.
 
-### First CI run: what it found, and what changed
+### CI history
 
-The channel's first run on a runner failed with `exit code 143` after 8 minutes
-and produced **no output at all**. Two defects, both in the channel's own
-plumbing rather than in its method:
+**Run 1** — `exit code 143` after 8 minutes, **no output at all.** Two plumbing
+defects, neither in what the channel measures:
 
-1. **The progress log never reached the log.** The case loop drove the engine
-   with `execFileSync`, which blocks the event loop for the whole case. Node
-   cannot drain an async stdout while the loop is blocked, so every `[PASS]` /
-   `[FAIL]` line sat in a buffer and died with the process when it was
-   terminated. Locally this was invisible, because a process that exits
-   *normally* flushes on the way out. The loop is now `await`-driven, so each
-   case's line reaches the log as it happens.
-2. **Nothing bounded a case.** A deck that never returns — the engine waiting on
-   a stdin nothing will write to, a sweep that will not converge — had no ceiling
-   below the six-hour job default. Each case now carries a 150 s timeout and
-   reports a hang as a *named* failure, and the job carries `timeout-minutes: 30`
-   as a backstop.
+1. **The progress log never reached the log.** The case loop drove the engine with
+   `execFileSync`, which blocks the event loop for the whole case. Node cannot
+   drain an async stdout while the loop is blocked, so every line sat in a buffer
+   and died with the process. Locally this is invisible, because a process that
+   exits *normally* flushes on the way out.
+2. **Nothing bounded a case.** A deck that never returns had no ceiling below the
+   six-hour job default.
 
-The child also writes its result to a **file** rather than to stdout: a payload
-written to an async pipe and followed immediately by `process.exit()` can be
-truncated, and a truncated payload arrives at the parent as invalid JSON — that
-is, as a failed case, which is the wrong story about what went wrong.
+Fixed by making the loop `await`-driven, giving every case a 150 s timeout that
+reports a hang as a *named* failure, and adding `timeout-minutes` to the job. The
+child now writes its result to a **file** rather than to stdout, because a payload
+written to an async pipe and followed by `process.exit()` can be truncated — and a
+truncated payload arrives at the parent as invalid JSON, i.e. as a failed case,
+which is the wrong story.
 
-The `--static-only` harness check passed on that same run, before the channel
-itself was reached.
+**Run 2** — `exit code 1` after ~20 s, every case executed. A guard failing the
+way a guard should. But the reason lived in a step log, which needs repository
+permissions to read, so the failure detail is now emitted as a **workflow
+annotation** as well — annotations are readable through the public checks API, so
+the reason a case failed stays visible to anyone reviewing the branch.
+
+**Run 3** — the annotations named three failures and, in doing so, falsified one of
+this document's own claims:
+
+- `reject_semicolon_dialect` **loaded** — the `;`-dialect attribution was wrong,
+  and is corrected in section 3. The fixture was removed; the assertion went with
+  it rather than being kept on a hunch.
+- `bsim3_longchannel` and `bsim4_longchannel` were fitted from mid-sweep, which
+  biases BSIM's slope and therefore its KP; see section 4. Both now fit deep
+  strong inversion only.
