@@ -400,6 +400,13 @@ for (const c of contract.cases) {
           ok: k.ok,
           label: `KP  recovered ${got.kp.toExponential(6)} vs declared ${c.declared.kp.toExponential(6)} (delta ${k.d.toExponential(2)} <= ${k.limit.toExponential(2)})`,
         });
+        if (IN_ACTIONS) {
+          // Publish WHAT was measured, not only whether it passed. The checks API
+          // that carries this notice needs no repository permissions, so the
+          // numbers this channel's documentation claims are readable off the run
+          // itself rather than having to be taken on trust.
+          console.log(`::notice::${c.name} VTO ${got.vto.toFixed(6)} KP ${got.kp.toExponential(6)} over ${got.points} fit point(s)`);
+        }
       }
     }
     record(c.name, c.what, checks, Date.now() - t0);
