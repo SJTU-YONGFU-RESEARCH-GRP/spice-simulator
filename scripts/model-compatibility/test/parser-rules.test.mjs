@@ -6,6 +6,30 @@ import { analyzeModel } from '../rules.mjs';
 const fixture = name => readFileSync(new URL('./fixtures/' + name, import.meta.url), 'utf8');
 const check = source => { const p = parseModels(source); return p.models.map(m => analyzeModel(m, p)); };
 
+test('only top-level parameters enter the runtime context', () => {
+  const p = parseModels('.param oxide=3n\n.SUBCKT helper a b\n.param oxide=-3n\n.model local NMOS LEVEL=1\n.ENDS HELPER\n.subckt other a\n.param hidden=1\n.ends\n.param bias=1\n.model global NMOS LEVEL=1');
+  assert.deepEqual(p.context, ['.param oxide=3n', '.param bias=1']);
+  assert.deepEqual(p.models.map(m => m.scoped), [true, false]);
+  assert.deepEqual(p.diagnostics, []);
+});
+
+test('nested and malformed subcircuits produce errors instead of trusted context', () => {
+  for (const scope of [
+    '.subckt outer a b\n.subckt inner a b\n.param local=1\n.ends inner\n.ends outer',
+    '.subckt helper a b\n.param local=1',
+    '.ends',
+    '.subckt helper a b\n.param local=1\n.ends wrong',
+    '.subckt\n.param local=1\n.ends',
+    '.subckt helper\n.param local=1\n.ends',
+    '.subckt helper a b\n.ends helper extra',
+  ]) {
+    const p = parseModels('.model top NMOS LEVEL=1\n' + scope);
+    assert.ok(p.diagnostics.some(d => d.code === 'SPICE_PARSE_007' && d.severity === 'error'), scope);
+    assert.deepEqual(p.context, [], scope);
+    assert.equal(analyzeModel(p.models[0], p).status, 'INVALID', scope);
+  }
+});
+
 test('LEVEL1 NMOS/PMOS, parentheses, continuation, metadata', () => {
   const parsed = parseModels(fixture('level1.lib'));
   assert.equal(parsed.models.length, 2);

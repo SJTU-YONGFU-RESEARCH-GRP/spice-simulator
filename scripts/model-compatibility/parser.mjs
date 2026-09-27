@@ -80,13 +80,29 @@ export function parseModels(source) {
       else { current.text += ' ' + text.slice(1).trim(); current.source += '\n' + raw; }
     } else { current = { text, source: raw, line: i + 1 }; statements.push(current); }
   }
-  let scope = 0;
+  let libraryDepth = 0;
+  const subcircuits = [];
+  const scopeError = (message, line) => diagnostics.push(diagnostic('SPICE_PARSE_007', 'error', message, { line }));
   for (const statement of statements) {
     const { text, line } = statement;
-    if (/^\.(subckt|lib)\b/i.test(text)) scope++;
-    if (/^\.(ends|endl)\b/i.test(text)) scope--;
+    if (/^\.subckt\b/i.test(text)) {
+      const declaration = /^\.subckt\s+([^\s()=]+)\s+\S+/i.exec(text);
+      if (!declaration) scopeError('Malformed .subckt declaration.', line);
+      if (subcircuits.length) scopeError('Nested .subckt scope is not supported; runtime skipped.', line);
+      subcircuits.push({ name: declaration?.[1], line });
+      continue;
+    }
+    if (/^\.ends\b/i.test(text)) {
+      const ending = /^\.ends(?:\s+(\S+))?\s*$/i.exec(text);
+      const opened = subcircuits.pop();
+      if (!opened) scopeError('Unmatched .ends.', line);
+      else if (!ending || (ending[1] && ending[1].toLowerCase() !== opened.name?.toLowerCase())) scopeError('.ends does not match its .subckt.', line);
+      continue;
+    }
+    if (/^\.lib\b/i.test(text)) libraryDepth++;
+    if (/^\.endl\b/i.test(text)) libraryDepth--;
     if (/^\.(include|inc|lib)\b/i.test(text)) dependencies.push({ line, directive: text });
-    if (/^\.param\b/i.test(text)) context.push(statement.source);
+    if (/^\.param\b/i.test(text) && !subcircuits.length && libraryDepth === 0) context.push(statement.source);
     if (!/^\.model\b/i.test(text)) continue;
     const match = /^\.model\s+([^\s()]+)\s+([a-z][\w]*)\b(.*)$/i.exec(text);
     if (!match) { diagnostics.push(diagnostic('SPICE_PARSE_001', 'error', 'Malformed .MODEL declaration.', { line, evidence: text })); continue; }
@@ -97,8 +113,9 @@ export function parseModels(source) {
     models.push({ name: match[1], type: match[2].toUpperCase(), level: levelText === null ? null : numericValue(levelText),
       levelText, version: valueOf('VERSION'), parameterCount: parameters.length,
       parameterNames: [...new Set(parameters.map(p => p.name))].sort(), parameters,
-      line, scoped: scope !== 0, source: statement.source, diagnostics: issues });
+      line, scoped: subcircuits.length > 0 || libraryDepth !== 0, source: statement.source, diagnostics: issues });
   }
+  for (const opened of subcircuits) scopeError('Unclosed .subckt scope.', opened.line);
   const names = new Set();
   for (const model of models) {
     if (names.has(model.name.toLowerCase())) model.diagnostics.push(diagnostic('SPICE_PARSE_005', 'warning', 'Duplicate model name; selection is ambiguous.', { line: model.line }));

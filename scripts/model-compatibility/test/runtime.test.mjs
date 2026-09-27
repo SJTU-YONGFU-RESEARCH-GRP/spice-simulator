@@ -10,6 +10,21 @@ const model = card => parseModels(card).models[0];
 const result = () => ({ exitStatus:0, exception:null, stdout:[], stderr:[], rawPresent:true,
   parsed:{plotname:'DC transfer characteristic',variables:[{name:'v(d)'},{name:'v(g)'},{name:'i(vds)'}],points:Array.from({length:19},()=>['1','0','0'])} });
 
+for (const [label, globalOxide, localOxide, valid] of [['A', '3n', '-3n', true], ['B', '-3n', '3n', false]]) {
+  test(`real subcircuit scope regression ${label}: analyzer agrees with original include`, () => {
+    const source = `.param oxide=${globalOxide}\n.subckt helper a b\n.param oxide=${localOxide}\nR1 a b 1k\n.ends helper\n.model n NMOS LEVEL=8 VERSION=3.3.0 TOX={oxide}`;
+    const included = probeDeck(buildProbe(model(source), [], '.include "/models/scope.lib"'),
+      { files: { '/models/scope.lib': source } });
+    const [row] = analyzeSource(source, 'scope.lib', { runtime: true, localize: false });
+    assert.equal(included.validResult, valid, JSON.stringify(included));
+    assert.equal(row.runtime.validResult, valid, JSON.stringify(row.runtime));
+    assert.equal(row.runtime.status, included.status);
+    assert.equal(row.runtime.exitStatus, included.exitStatus);
+    assert.equal(row.runtime.rawPresent, included.rawPresent);
+    assert.equal(row.runtime.pointCount, included.pointCount);
+  });
+}
+
 test('real shipped WASM: NMOS/PMOS across LEVEL1/2/3/8/49/14/54', () => {
   for (const level of [1,2,3,8,49,14,54]) for (const type of ['NMOS','PMOS']) {
     const version = [8,49].includes(level) ? ' VERSION=3.3.0' : [14,54].includes(level) ? ' VERSION=4.8.1' : '';

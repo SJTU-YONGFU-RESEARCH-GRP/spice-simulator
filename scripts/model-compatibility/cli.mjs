@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, lstatSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, readdirSync, lstatSync, statSync, realpathSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, relative, join, dirname, extname } from 'node:path';
 import { parseModels, diagnostic } from './parser.mjs';
 import { analyzeModel, CAPABILITIES } from './rules.mjs';
@@ -68,6 +68,23 @@ export function parseArgs(args) {
   return { input: input ?? 'site/models', ...options };
 }
 
+function rejectInputOverwrite(files, output) {
+  let target;
+  try { target = statSync(output, { bigint: true }); }
+  catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw error;
+  }
+  const targetPath = realpathSync(output);
+  // Follow the filesystem's identity rules, including case aliases and links.
+  const aliasesInput = files.some(file => {
+    const input = statSync(file, { bigint: true });
+    return realpathSync(file) === targetPath ||
+      (input.ino !== 0n && input.dev === target.dev && input.ino === target.ino);
+  });
+  if (aliasesInput) throw new Error('Report output must not overwrite an input file');
+}
+
 export function main(args = process.argv.slice(2)) {
   try {
     const options = parseArgs(args);
@@ -77,7 +94,7 @@ export function main(args = process.argv.slice(2)) {
     }
     const files = scanFiles(resolve(options.input));
     if (!files.length) throw new Error('No model files found');
-    if (files.some(file => resolve(file) === resolve(options.output))) throw new Error('Report output must not overwrite an input file');
+    rejectInputOverwrite(files, options.output);
     const engine = options.runtime ? { path: 'site/vendor/ngspice.js', sha256: hash(readFileSync(VENDOR)), behavior: 'lt', host: 'Node', fixture: 'DC 0..1.8V, signed by polarity; W=10u L=1u' } : null;
     const rows = files.flatMap(file => analyzeSource(readFileSync(file, 'utf8'), relative(process.cwd(), file).replaceAll('\\', '/'), options));
     const report = buildReport(rows, engine, options.runtime ? probeCapabilities() : []);

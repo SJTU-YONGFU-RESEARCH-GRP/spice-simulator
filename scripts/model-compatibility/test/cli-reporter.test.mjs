@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync, linkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,38 @@ import { spawnSync } from 'node:child_process';
 import { analyzeSource, scanFiles, parseArgs } from '../cli.mjs';
 import { stableJSON, buildReport, terminalReport } from '../reporter.mjs';
 const CLI=fileURLToPath(new URL('../../model-compatibility.mjs',import.meta.url));
+
+for (const alias of ['exact', 'case', 'normalized', 'hard-link', 'independent']) {
+  test(`CLI output identity: ${alias}; input bytes are preserved`, t => {
+    const dir = mkdtempSync(join(tmpdir(), 'model-path-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const input = join(dir, 'input.lib');
+    const source = Buffer.from('.model safe NMOS LEVEL=1\r\n');
+    writeFileSync(input, source);
+    let output = input;
+    if (alias === 'case') {
+      output = join(dir, 'INPUT.LIB');
+      if (!existsSync(output)) return t.skip('Filesystem is case-sensitive');
+    } else if (alias === 'normalized') {
+      mkdirSync(join(dir, 'child'));
+      output = `${dir}/./child/../input.lib`;
+    } else if (alias === 'hard-link') {
+      output = join(dir, 'alias.json');
+      linkSync(input, output);
+    } else if (alias === 'independent') output = join(dir, 'report.json');
+    const result = spawnSync(process.execPath, [CLI, './input.lib', '--json', '--output', output],
+      { cwd: dir, encoding: 'utf8', windowsHide: true });
+    assert.deepEqual(readFileSync(input), source);
+    assert.equal(result.status, alias === 'independent' ? 0 : 3, result.stderr);
+    if (alias === 'independent') {
+      assert.equal(JSON.parse(result.stdout).exitCode, 0);
+      assert.equal(result.stdout, readFileSync(output, 'utf8'));
+    } else {
+      assert.equal(JSON.parse(result.stderr).diagnostics[0].code, 'TOOL_001');
+      assert.match(result.stderr, /must not overwrite an input file/);
+    }
+  });
+}
 
 test('default scan is static; dependencies and non-MOS remain explicitly untested', () => {
   assert.equal(analyzeSource('.model n NMOS LEVEL=1','n.lib')[0].runtime.status,'NOT_RUN');
