@@ -1,0 +1,22 @@
+* Long-channel limit of BSIM4, by the same switch-off set as the BSIM3 card.
+*
+* BSIM4 is LESS reducible than BSIM3: with the identical switches the recovered
+* mobility*Cox still carries a residual of roughly -2.7 %, and it survives
+* zeroing A0/AGS/B0/B1 as well as the geometry offsets (DWC/DLC/XW). The
+* recovery case therefore bounds BSIM4 loosely and reports the number instead of
+* pretending the reduction is exact -- which is the honest shape of "BSIM4
+* absolute accuracy" today.
+*
+* NLX is BSIM3-only; BSIM4 rejects it (strtod on the whole card). Its role here
+* is played by LPE0/LPEB.
+.model n1 nmos level=14 vth0=0.5 u0=600 toxe=9n
++ dvt0=0 dvt1=0 dvt2=0 dvt0w=0 dvt1w=0 dvt2w=0
++ k3=0 w0=0 lpe0=0 lpeb=0
++ eta0=0 etab=0
++ pdiblc1=0 pdiblc2=0 pdiblcb=0 pscbe1=1e12 pscbe2=0
++ rdsw=0 prwg=0 prwb=0
++ ua=0 ub=0 uc=0 vsat=1e9
++ k1=0 k2=0 cit=0 cdsc=0 cdscb=0 cdscd=0
++ nfactor=1 noff=1 voff=0 voffcv=0
++ delta=0 lint=0
++ pclm=1e-12

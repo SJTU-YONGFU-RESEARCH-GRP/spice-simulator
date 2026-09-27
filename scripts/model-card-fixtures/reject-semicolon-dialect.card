@@ -1,0 +1,18 @@
+* Foreign comment dialect: the parameter lines carry trailing `;` comments, the
+* style used by HSPICE/Spectre and by every card in the lab's own
+* SJTU-YONGFU-RESEARCH-GRP/spice_model_collections repository (whose files are
+* advertised as "ready-to-use ... including NGSPICE").
+*
+* ngspice does not treat `;` as a comment. The token becomes `0.7;` and the
+* card's whole parameter line dies in strtod with
+*
+*     strtod: Invalid argument
+*
+* This card must be REFUSED. A card that loads while meaning something other
+* than what it says is the failure mode this channel exists to prevent.
+.MODEL n1 NMOS LEVEL=1
++ VTO    = 0.7         ; Threshold voltage (V)
++ KP     = 50.0e-6     ; Transconductance parameter (A/V^2)
++ GAMMA  = 0.8         ; Bulk threshold parameter (V^0.5)
++ PHI    = 0.7         ; Surface potential (V)
++ LAMBDA = 0.02        ; Channel length modulation (1/V)

@@ -67,6 +67,9 @@
     "patch:header": "node scripts/patch-outbound.mjs --manifest=scripts/panel-header.json",
     "check:header": "node scripts/check-artifacts.mjs",
     "check:header:neg": "node scripts/panel-header.negctl.mjs",
+    "check:intake": "node scripts/model-card-intake.mjs",
+    "check:intake:neg": "node scripts/model-card-intake.negctl.mjs",
+    "check:intake:neg:static": "node scripts/model-card-intake.negctl.mjs --static-only",
     "audit:ux": "node scripts/ux-audit.mjs"
   }
 }

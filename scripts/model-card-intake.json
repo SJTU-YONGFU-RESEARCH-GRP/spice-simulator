@@ -1,0 +1,107 @@
+{
+  "$comment": "Contract for scripts/model-card-intake.mjs. Everything the channel asserts lives here, so the expectations are auditable without reading the driver, and so the negative control can mutate either side of the pair (the card, or the expectation) and require the channel to notice.",
+  "$how": "Read, not patched. Each case names a card -- either a fixture under scripts/model-card-fixtures/, or the SHIPPED library under site/models/ via \"include\": true -- together with the numbers that card declares. The channel recovers those numbers from the engine's own transfer curve and holds them against the declaration.",
+  "$shape": "cases[].kind is 'recover' (the card must load and its parameters must come back) or 'refuse' (the card must NOT load, for a recorded reason).",
+  "$mechanism": [
+    "Recovery uses a CONSTANT-Vds, swept-Vgs deck, which is the textbook extraction topology and the reason the numbers come back exact: at constant Vds the term (1 + LAMBDA*Vds) from channel-length modulation is a constant, so sqrt(Id) stays a straight line in Vgs. With a resistive load Vds moves with Vgs and the same fit is biased by percent-level amounts -- measured, and the reason an earlier resistive-load version of this channel reported a 1.8% VTO error and a 6.6% KP error on cmos.lib devices that are in fact exact.",
+    "VTO is the x-intercept of that line; KP is 2*slope^2 / ((W/L) * (1 + LAMBDA*Vds)).",
+    "BSIM3 and BSIM4 have no closed form, so they do not get a relative tolerance. Their cards are reduced to their long-channel limit -- every second-order switch the model offers, switched off -- and the claim becomes an ABSOLUTE band on the recovered threshold plus a check that the recovered transconductance still matches the declared U0*Cox. That is the difference between 'unproven' and 'bounded', which is what the roadmap asked for.",
+    "A card the engine refuses must be refused. A card that loads while meaning something other than it declares is the failure mode this channel exists to prevent, so 'must be refused' is an assertion, not a skip."
+  ],
+  "contract": {
+    "engine": "site/vendor/ngspice.js",
+    "geometry": { "wl": 10, "spice": "W=10u L=1u" },
+    "recovery": {
+      "vds": 1.5,
+      "vgsFrom": 0.6,
+      "vgsTo": 1.8,
+      "step": 0.02,
+      "keepFrom": 0.35,
+      "lambda": 0.05
+    },
+    "library": {
+      "file": "cmos.lib",
+      "include": "/spice-simulator/models/cmos.lib"
+    }
+  },
+  "cases": [
+    {
+      "name": "shipped_library_tt",
+      "what": "the shipped library's own typical device: site/models/cmos.lib declares nmos_rvt VTO={0.5+0.08*__cn_sel} KP={200u-30u*__cn_sel}, so at __cn_sel=0 the engine must BE a 0.5 V / 200 uA/V^2 device",
+      "kind": "recover",
+      "include": true,
+      "corner": 0,
+      "device": "nmos_rvt",
+      "declared": { "vto": 0.5, "kp": 2e-4 },
+      "tol": { "vto": { "rel": 1e-06 }, "kp": { "rel": 1e-06 } }
+    },
+    {
+      "name": "shipped_library_ss",
+      "what": "the same device under the slow corner: the selector must move VTO to 0.58 and KP to 170u. A library whose selector stopped being honoured would report the typical answer here",
+      "kind": "recover",
+      "include": true,
+      "corner": 1,
+      "device": "nmos_rvt",
+      "declared": { "vto": 0.58, "kp": 1.7e-4 },
+      "tol": { "vto": { "rel": 1e-06 }, "kp": { "rel": 1e-06 } }
+    },
+    {
+      "name": "shipped_library_ff",
+      "what": "the fast corner: VTO 0.42, KP 230u",
+      "kind": "recover",
+      "include": true,
+      "corner": -1,
+      "device": "nmos_rvt",
+      "declared": { "vto": 0.42, "kp": 2.3e-4 },
+      "tol": { "vto": { "rel": 1e-06 }, "kp": { "rel": 1e-06 } }
+    },
+    {
+      "name": "control_level1",
+      "what": "method validation: a literal LEVEL-1 card whose law IS the closed form, carrying the same nonzero LAMBDA the library uses. Exact by construction -- if this drifts, the extraction is wrong and every other recovery case is void",
+      "kind": "recover",
+      "card": "level1-control.card",
+      "device": "n1",
+      "declared": { "vto": 0.5, "kp": 2e-4 },
+      "tol": { "vto": { "rel": 1e-06 }, "kp": { "rel": 1e-06 } }
+    },
+    {
+      "name": "bsim3_longchannel",
+      "what": "BSIM3 (level=8) with every second-order effect switched off. The transconductance claim is tight (the declared U0*Cox = 2.302040e-4 A/V^2 must come back); the threshold claim is an absolute band, because BSIM3's own smoothing puts the long-channel-limit threshold tens of mV from VTH0. Measured on a resistive-load deck before this channel existed: VTO offset -24.7 mV, constant to 1e-6 V as VTH0 is swept 0.2 -> 1.0 V; transconductance within +0.08 % of declared. The tolerance below is set wider than that measurement because the channel extracts at constant Vds and the first CI run must confirm the value in THAT topology before the bound is tightened.",
+      "kind": "recover",
+      "card": "bsim3-longchannel.card",
+      "device": "n1",
+      "declared": { "vto": 0.5, "kp": 0.000230204 },
+      "tol": { "vto": { "rel": 0, "abs": 0.04 }, "kp": { "rel": 0.01 } }
+    },
+    {
+      "name": "bsim4_longchannel",
+      "what": "BSIM4 (level=14) under the identical switch-off set. Deliberately the LOOSEST tolerance in the file: BSIM4 is less reducible than BSIM3 and keeps a few-percent transconductance residual that survives zeroing A0/AGS/B0/B1 and the geometry offsets (DWC/DLC/XW) -- measured at -2.7 % on a resistive-load deck. The case reports the number rather than pretending the reduction is exact, which is the honest shape of 'BSIM4 absolute accuracy' today. Widen or tighten only against a recorded measurement from this channel's own topology.",
+      "kind": "recover",
+      "card": "bsim4-longchannel.card",
+      "device": "n1",
+      "declared": { "vto": 0.5, "kp": 0.000230204 },
+      "tol": { "vto": { "rel": 0, "abs": 0.04 }, "kp": { "rel": 0.08 } }
+    },
+    {
+      "name": "reject_semicolon_dialect",
+      "what": "a card written in the HSPICE/Spectre comment dialect -- the style of every card in SJTU-YONGFU-RESEARCH-GRP/spice_model_collections. ngspice does not know `;`, so the parameter line dies in the tokenizer. The collection's LEVEL-1 card fails this way too, for a model this engine certainly supports",
+      "kind": "refuse",
+      "card": "reject-semicolon-dialect.card",
+      "expectReason": "token-syntax"
+    },
+    {
+      "name": "reject_param_name",
+      "what": "a misspelled BSIM3 parameter (pdibl1 for PDIBLC1). The engine neither warns nor ignores it -- the whole card dies in strtod, with the SAME message the dialect case produces. Two different user mistakes, one indistinguishable diagnostic",
+      "kind": "refuse",
+      "card": "reject-param-name.card",
+      "expectReason": "token-syntax"
+    },
+    {
+      "name": "reject_param_range",
+      "what": "an out-of-range value (PCLM=0). This is the only refusal that carries a diagnosis of its own: BSIM3's parameter checker reports 'Fatal: Pclm = 0 is not positive.'",
+      "kind": "refuse",
+      "card": "reject-param-range.card",
+      "expectReason": "parameter-range"
+    }
+  ]
+}

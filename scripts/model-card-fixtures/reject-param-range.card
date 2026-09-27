@@ -1,0 +1,13 @@
+* Out-of-range BSIM3 parameter. PCLM=0 is the natural way to write "no
+* channel-length modulation", and it is what the long-channel reduction cards
+* would say if the model allowed it. BSIM3's parameter check refuses the value:
+*
+*     Fatal: Pclm = 0 is not positive.
+*     Fatal error: Fatal error(s) detected during BSIM3V3.3 parameter checking
+*
+* This is the one rejection in the channel that produces a DIAGNOSIS rather than
+* a tokenizer error, and the reason the long-channel cards carry pclm=1e-12.
+* It must be refused; a card that loaded here would silently mean a different
+* model than it declares.
+.model n1 nmos level=8 vth0=0.5 u0=600 tox=9n
++ pclm=0

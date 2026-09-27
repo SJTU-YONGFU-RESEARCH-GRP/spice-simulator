@@ -1,0 +1,72 @@
+name: Model-card intake
+
+# Runs the model-card intake channel on a runner instead of on a workstation.
+#
+# Why this is a separate workflow rather than a step in pages.yml
+# --------------------------------------------------------------
+# pages.yml triggers only on pushes to main/master, and its deploy job ends in
+# `peaceiris/actions-gh-pages` with `force_orphan: true` and no branch guard.
+# Dispatching THAT workflow against a feature branch therefore publishes that
+# branch's site/ over the live Pages site. The lab's intended contribution
+# workflow -- "make your changes on a branch named after you" -- consequently has
+# no CI story at all: the only available verification path is also the one that
+# would overwrite the deploy.
+#
+# This workflow exists to close that gap for this channel without touching the
+# deploy pipeline. It requests `contents: read`, never publishes, and runs the
+# same three commands a developer runs locally:
+#
+#   npm run check:intake:neg:static   build + validate the mutant harness, no engine
+#   npm run check:intake              the channel itself
+#   npm run check:intake:neg          prove the channel is not vacuous
+#
+# It runs on any branch, so a feature branch gets verified without any risk to
+# the published site. A branch guard on pages.yml's publish step
+# (`if: github.ref_name == github.event.repository.default_branch`) would let the
+# rest of the suite run this way too; that is a change to the deploy pipeline and
+# is deliberately left to the maintainer.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["**"]
+    paths:
+      - "scripts/model-card-intake.mjs"
+      - "scripts/model-card-intake.json"
+      - "scripts/model-card-intake.negctl.mjs"
+      - "scripts/model-card-fixtures/**"
+      - "site/models/**"
+      - "site/vendor/ngspice.js"
+      - ".github/workflows/model-card-intake.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  intake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # The harness is checkable without instantiating the engine: the mutation
+      # anchors are counted, the fixture and contract rewrites are applied, and
+      # each rehomed mutant driver is parsed. A moved anchor is a harness bug and
+      # must not be mistaken for a surviving mutant.
+      - name: Build and validate the mutant harness (no engine)
+        run: node scripts/model-card-intake.negctl.mjs --static-only
+
+      # Drives the shipped WASM engine in a Node host: recovers VTO and KP from
+      # constant-Vds transfer curves and holds them against what each card
+      # declares, and requires three unusable cards to be refused.
+      - name: Run the model-card intake channel
+        run: node scripts/model-card-intake.mjs --verbose
+
+      # A channel that only ever prints PASS proves nothing. Each mutant must go
+      # red for its own reason: a changed card, a re-introduced physical effect,
+      # a card that is no longer refusable, and an expectation that no longer
+      # matches the artifact.
+      - name: Prove the intake channel is not vacuous (mutation test)
+        run: node scripts/model-card-intake.negctl.mjs

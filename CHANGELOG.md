@@ -17,6 +17,71 @@ and [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added — model-card intake and BSIM parameter recovery
+
+`scripts/model-card-intake.mjs` (`npm run check:intake`) runs model cards through
+the shipped engine and answers two questions nothing in this tree asked before.
+
+**Does a card load, and if not, why.** Three refusal modes were measured, and two
+of them are indistinguishable from the outside:
+
+| the mistake | what the engine says |
+|---|---|
+| `+ VTO = 0.7 ; Threshold voltage (V)` — the HSPICE/Spectre comment dialect | `strtod: Invalid argument`, engine `exit(1)` |
+| `pdibl1=0` — a misspelled parameter name (`PDIBLC1`) | the *same* `strtod: Invalid argument` |
+| `pclm=0` — an out-of-range value | `Fatal: Pclm = 0 is not positive.` |
+
+Every card in `SJTU-YONGFU-RESEARCH-GRP/spice_model_collections` is written in
+that dialect, so **eight of its eight `bsim/*.ngspice` cards are refused by this
+engine — including its LEVEL-1 card**, for a model this engine certainly
+supports. Its `ptm/45nm_LP.pm` and `ptm/22nm_LP.pm` do load.
+
+**Are the numbers a card produces the numbers it declares.** In strong inversion
+at constant `Vds`, `sqrt(Id)` is a straight line in `Vgs`: the intercept is the
+threshold, the slope gives `KP`. The extraction was validated against the closed
+form first — a literal LEVEL-1 card recovers to 3e-9 relative, and
+`site/models/cmos.lib`'s own `nmos_rvt` recovers its declared `VTO` and `KP` at
+all three corners to 1e-8 — and then applied to the roadmap's open item:
+
+- **BSIM3** (level 8), reduced to its long-channel limit, uses the declared
+  mobility and oxide thickness to **+0.08 %**; its threshold sits **−24.7 mV**
+  from the declared `VTH0`, an offset that is constant to six decimals as `VTH0`
+  is swept 0.2 → 1.0 V and varies only with oxide thickness and temperature.
+- **BSIM4** (level 14) under the identical switch-off set keeps a **−2.7 %**
+  transconductance residual that survives zeroing `A0`/`AGS`/`B0`/`B1` and the
+  geometry offsets `DWC`/`DLC`/`XW`.
+
+Neither reduction asserts anything about BSIM outside the long-channel limit, and
+no cause is claimed for the threshold offset — only its measured behaviour.
+[`docs/MODEL_CARD_INTAKE.md`](./docs/MODEL_CARD_INTAKE.md) states the claim
+boundaries explicitly.
+
+Also fixed in passing: the constant-`Vds` requirement itself. The first version
+of the extraction used a resistive load, where `(1 + LAMBDA*Vds)` is not
+constant; that version reported a 1.8 % `VTO` error and a 6.6 % `KP` error on
+`cmos.lib` devices that are in fact exact.
+
+### Added — a branch-dispatchable verification workflow
+
+`.github/workflows/model-card-intake.yml` runs the channel, its static harness
+check and its mutation test on a runner. It requests `contents: read` and never
+publishes.
+
+It exists because the tree had no way to verify a feature branch. `pages.yml`
+triggers only on pushes to `main`/`master`, and its deploy job ends in
+`peaceiris/actions-gh-pages` with `force_orphan: true` and **no branch guard** —
+so dispatching it against a branch publishes that branch's `site/` over the live
+Pages site. The lab's intended contribution flow is "make your changes on a
+branch named after you", which therefore had no CI story that did not also
+overwrite the deploy. A branch guard on the publish step
+(`if: github.ref_name == github.event.repository.default_branch`) would let the
+rest of the suite run that way too; that is a change to the deploy pipeline and is
+left to the maintainer.
+
+---
+
 ## [0.3.0] — 2026-09-26
 
 First release to carry the verification harness. The body of work between

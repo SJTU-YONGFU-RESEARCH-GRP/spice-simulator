@@ -1,0 +1,6 @@
+* Control card: a plain LEVEL-1 device carrying the SAME nonzero LAMBDA the
+* shipped library uses, so the control exercises exactly the shape the artifact
+* under test has. Its closed form is exact, so the recovery must be exact; if it
+* is not, the extraction (not the model) is at fault and every other case in the
+* channel is void.
+.model n1 nmos level=1 vto=0.5 kp=200u gamma=0.4 phi=0.7 lambda=0.05

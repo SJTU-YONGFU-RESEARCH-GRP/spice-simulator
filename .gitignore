@@ -20,6 +20,7 @@ spice-import-result.json
 gallery-shim-result.json
 stability-margin-result.json
 ux-audit-result.json
+model-card-intake-result.json
 
 # Legacy vanilla simulator (deleted from this repo)
 # NOTE: the leading "/" below is deliberate - those patterns are anchored to the

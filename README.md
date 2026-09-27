@@ -77,6 +77,7 @@ table is the headline; the *how* and the *proof* are in
 | — | **Engine egress integrity** | The third-party engine fallback verifies what it downloads by hash. | A tampered payload must be refused *and never executed*. | `egress-integrity.mjs` |
 | — | **Offline simulation** | Service worker caches the engine; a second simulation finishes with the network off. | Only Cache Storage can serve the 6.9 MB engine with no network. | `offline-sim.mjs` + `sw-cache.negctl.mjs` + checks 12/13 |
 | — | **Precache budget** | Install payload bounded and checked in a real browser. | `cache.addAll` aborts the install if one member fails. | `precache-weight.mjs` + `precache-budget.negctl.mjs` + check 5 |
+| — | **Model-card intake** | Every card is run through the shipped engine: unusable ones are refused with a reason class, and the ones that load have their declared `VTO`/`KP` recovered from a constant-`Vds` transfer curve. | Nothing checked that a user's model card *loads*, or that a card that loads means what it declares — and the two most common mistakes are indistinguishable from the diagnostic. Also scopes the BSIM3/4 accuracy the roadmap lists as unproven. | `model-card-intake.mjs` + `model-card-intake.negctl.mjs` |
 
 ---
 
@@ -238,6 +239,7 @@ UX defect can pass every guard, which is why it exists.
 | [`README.md`](./README.md) | This file — overview, features, architecture, layout, getting started. |
 | [`CHANGELOG.md`](./CHANGELOG.md) | Every improvement grouped by version, with the commit that made it and the version it landed under. |
 | [`docs/VERIFICATION.md`](./docs/VERIFICATION.md) | **The verification harness**: command set, the four-layer method, the per-patch narratives, and the full guard/tool catalog. The technical heart of the project. |
+| [`docs/MODEL_CARD_INTAKE.md`](./docs/MODEL_CARD_INTAKE.md) | Model-card intake: how a card is recovered and refused, the measured BSIM3/4 accuracy bounds, and — explicitly — what those measurements do **not** claim. |
 | [`docs/verification-methodology.svg`](./docs/verification-methodology.svg) | The same method as a diagram: four layers, one gate. Interactive hover states; open the file in a browser. |
 | [`docs/REPO_LAYOUT.md`](./docs/REPO_LAYOUT.md) | Public/private dual-repo layout, publish flow, privacy model. |
 | [`docs/PRIVATE_LAB_BOOTSTRAP.md`](./docs/PRIVATE_LAB_BOOTSTRAP.md) | Checklist for standing up the private lab repo (`spice-simulator-lab`). |
@@ -259,7 +261,12 @@ Where this is heading, in the order the work is actually gated. Items under
 - **Prove the BSIM numbers or scope them down.** The numeric cross-check
   guarantees linear circuits, MOS LEVEL-1–4 and diodes against closed forms;
   BSIM3/4 absolute accuracy is currently **unproven** and labelled as such
-  rather than implied.
+  rather than implied. **Partially scoped:** `scripts/model-card-intake.mjs`
+  recovers `VTO` and `KP` from a constant-`Vds` transfer curve in the
+  long-channel limit — BSIM3 uses the declared mobility and oxide thickness to
+  0.08 %, with a threshold 24.7 mV below the declared `VTH0`; BSIM4 keeps a
+  ~2.7 % transconductance residual that no switch-off set removed. See
+  [`docs/MODEL_CARD_INTAKE.md`](./docs/MODEL_CARD_INTAKE.md).
 - **A real corner story.** The shipped `tt`/`ss`/`ff` are teaching corners over
   LEVEL-1 models. They must not stand in for foundry corners: a genuine corner
   set (SKY130) needs a server-side container, which a static deploy cannot

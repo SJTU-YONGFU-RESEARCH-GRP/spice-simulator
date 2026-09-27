@@ -1,0 +1,13 @@
+* Misspelled BSIM3 parameter. The correct name is PDIBLC1; `pdibl1` is the
+* spelling BSIM4/PTM documentation uses, so it is an easy and natural mistake.
+*
+* The engine does NOT warn about an unknown parameter and carry on. It fails the
+* whole card in strtod:
+*
+*     strtod: Invalid argument
+*
+* -- the SAME message the semicolon-dialect card produces. Two very different
+* user errors, one indistinguishable diagnostic. That is the finding this case
+* and reject-semicolon-dialect.card together record.
+.model n1 nmos level=8 vth0=0.5 u0=600 tox=9n
++ pclm=1e-12 pdibl1=0
