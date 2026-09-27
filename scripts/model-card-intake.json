@@ -66,21 +66,21 @@
     },
     {
       "name": "bsim3_longchannel",
-      "what": "BSIM3 (level=8) with every second-order effect switched off, fitted in DEEP strong inversion only (keepFrom 0.8). The window is narrower than the LEVEL-1 cases' on purpose: BSIM smooths its way in from threshold and a mid-sweep fit biases the slope, which lands doubled on KP. The transconductance claim is tight (the declared U0*Cox = 2.302040e-4 A/V^2 must come back); the threshold claim is an absolute band, because BSIM3's own smoothing puts the long-channel-limit threshold tens of mV from VTH0",
+      "what": "BSIM3 (level=8) with every second-order effect switched off, fitted in deep strong inversion (keepFrom 0.8) and with lambda 0 -- the card carries clm=1e-12, so it has no channel-length modulation to divide out. Applying the LEVEL-1 library's 0.05 here instead reports KP 7.5 % low, which is what this channel did until a CI run exposed the ratio: 2.302040/2.142342 = 1.0746 against 1 + 0.05*1.5 = 1.075. The claim is tight (the declared U0*Cox = 2.302040e-4 A/V^2 must come back); the threshold claim is an absolute band, because BSIM3's own smoothing puts the long-channel-limit threshold tens of mV from VTH0",
       "kind": "recover",
       "card": "bsim3-longchannel.card",
       "device": "n1",
-      "recovery": { "keepFrom": 0.8 },
+      "recovery": { "keepFrom": 0.8, "lambda": 0 },
       "declared": { "vto": 0.5, "kp": 0.000230204 },
       "tol": { "vto": { "rel": 0, "abs": 0.04 }, "kp": { "rel": 0.01 } }
     },
     {
       "name": "bsim4_longchannel",
-      "what": "BSIM4 (level=14) under the identical switch-off set and the same deep-strong-inversion window. Deliberately the LOOSEST tolerance in the file: BSIM4 is less reducible than BSIM3 and keeps a few-percent transconductance residual that survives zeroing A0/AGS/B0/B1 and the geometry offsets (DWC/DLC/XW). The case reports the number rather than pretending the reduction is exact, which is the honest shape of 'BSIM4 absolute accuracy' today. Widen or tighten only against a recorded measurement from this channel's own topology",
+      "what": "BSIM4 (level=14) under the identical switch-off set, the same window and the same lambda 0. Deliberately the LOOSEST tolerance in the file: BSIM4 is less reducible than BSIM3 and keeps a ~2.7 % transconductance residual that survives zeroing A0/AGS/B0/B1 and the geometry offsets (DWC/DLC/XW). The case reports the number rather than pretending the reduction is exact, which is the honest shape of 'BSIM4 absolute accuracy' today. Widen or tighten only against a recorded measurement from this channel's own topology",
       "kind": "recover",
       "card": "bsim4-longchannel.card",
       "device": "n1",
-      "recovery": { "keepFrom": 0.8 },
+      "recovery": { "keepFrom": 0.8, "lambda": 0 },
       "declared": { "vto": 0.5, "kp": 0.000230204 },
       "tol": { "vto": { "rel": 0, "abs": 0.08 }, "kp": { "rel": 0.08 } }
     },

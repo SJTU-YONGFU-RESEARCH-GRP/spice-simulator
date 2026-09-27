@@ -55,6 +55,14 @@ all three corners to 1e-8 — and then applied to the roadmap's open item:
   transconductance residual that survives zeroing `A0`/`AGS`/`B0`/`B1` and the
   geometry offsets `DWC`/`DLC`/`XW`.
 
+The first two of those were measured on resistive-load decks; the channel then
+reproduced them at constant `Vds` — BSIM3 at +0.04 % and BSIM4 at −2.70 % — which
+is two topologies and two implementations agreeing. Getting there took a run that
+failed: the extraction had been dividing out the shipped library's `LAMBDA` on
+cards whose `pclm` is 1e-12, i.e. on cards that have no channel-length modulation,
+which put their KP 7.5 % low (`2.302040 / 2.142342 = 1.0746` against
+`1 + 0.05*1.5 = 1.075`). The correction is now per-case.
+
 Neither reduction asserts anything about BSIM outside the long-channel limit, and
 no cause is claimed for the threshold offset — only its measured behaviour.
 [`docs/MODEL_CARD_INTAKE.md`](./docs/MODEL_CARD_INTAKE.md) states the claim

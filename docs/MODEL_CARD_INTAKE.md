@@ -208,25 +208,41 @@ bulk-charge (`K1`/`K2`) switch off, with `pclm=1e-12`.
   | last 50 points (`Vgs >= 0.72`) | 0.502843 |
   | *LEVEL-1 control, every window* | *0.500000* |
 
-**The window is load-bearing, and the first CI run proved it.** Fitting BSIM from
-mid-sweep — which is fine for LEVEL-1, whose law *is* the square law across the
-whole sweep — put the recovered transconductance low by a factor that lands
-doubled on KP, because `KP = 2*slope^2 / (W/L)`:
+**What the first runs actually found.** Two hypotheses were put to the engine
+before the arithmetic settled it, and both are recorded because the channel's own
+numbers falsified the first:
 
-| case, fitted from mid-sweep (`keepFrom` 0.35) | KP recovered | declared | error |
+| run | BSIM3 KP recovered | declared | error |
 |---|---|---|---|
-| `bsim3_longchannel` | 2.149541e-4 | 2.302040e-4 | −6.6 % |
-| `bsim4_longchannel` | 2.083303e-4 | 2.302040e-4 | −9.5 % |
+| fitted from mid-sweep (`keepFrom` 0.35) | 2.149541e-4 | 2.302040e-4 | −6.6 % |
+| fitted deep in strong inversion (`keepFrom` 0.8) | 2.142342e-4 | 2.302040e-4 | −6.9 % |
 
-The LEVEL-1 cases and all three `shipped_library_*` cases passed in that same run,
-which is what localized the fault to the model rather than to the extraction.
-Both BSIM cases now fit **deep strong inversion only** (`keepFrom` 0.8), which is
-the regime where `Vgsteff -> Vgs - Vth` exactly and the closed form is therefore
-the operative law — a principled window, not a tuned one.
+Narrowing the window moved the answer by 0.3 pp. **The fit window was not the
+cause** — an earlier draft of this section asserted that it was.
 
-The numbers quoted above and below were measured on resistive-load decks before
-this channel used the constant-`Vds` topology. They are the *shape* of the
-answer; the authoritative values are the ones each run records for itself.
+The cause was the channel-length-modulation correction. Holding `Vds` constant
+makes `(1 + lambda*Vds)` a constant factor on the slope, which the extraction
+divides out; but it was dividing out the LEVEL-1 library's `LAMBDA=0.05` on cards
+whose `pclm` is `1e-12` — cards with no channel-length modulation at all. The
+arithmetic leaves no room:
+
+```
+2.302040 / 2.142342 = 1.0746      against      1 + 0.05 * 1.5 = 1.075
+2.302040 / 2.083656 = 1.1049      against      1.075 * 1.0278
+```
+
+`lambda` is now per-case, and the two numbers it recovers are the two measured
+independently on resistive-load decks before this channel existed: BSIM3 at
+**+0.04 %** of the declared `U0*Cox`, BSIM4 at **−2.70 %**. Two topologies, two
+implementations, the same answer.
+
+The deep-inversion window is kept — it is the regime where `Vgsteff -> Vgs - Vth`
+exactly and the closed form is therefore the operative law — but it is kept on
+principle, not because it repaired anything.
+
+The numbers quoted in this section were measured on resistive-load decks before
+the channel used constant `Vds`. They are the *shape* of the answer; the
+authoritative values are the ones each run records for itself.
 
 ### BSIM4 (level=14), long-channel limit
 
@@ -329,6 +345,12 @@ this document's own claims:
 - `reject_semicolon_dialect` **loaded** — the `;`-dialect attribution was wrong,
   and is corrected in section 3. The fixture was removed; the assertion went with
   it rather than being kept on a hunch.
-- `bsim3_longchannel` and `bsim4_longchannel` were fitted from mid-sweep, which
-  biases BSIM's slope and therefore its KP; see section 4. Both now fit deep
-  strong inversion only.
+- `bsim3_longchannel` and `bsim4_longchannel` put KP 6.6 % and 9.5 % low.
+
+**Run 4** — the `;` case is gone, the four LEVEL-1 cases and both refusal cases
+pass, and the two BSIM cases still fail, by 6.9 % and 9.5 %. The fit window had
+been narrowed in between, and that moved the answer by 0.3 pp — so the window was
+not the cause, and the draft of section 4 that said it was is corrected there.
+The cause was the channel-length-modulation correction: `2.302040 / 2.142342 =
+1.0746` against `1 + 0.05 * 1.5 = 1.075`. The extraction was dividing out the
+LEVEL-1 library's `LAMBDA` on cards that have no channel-length modulation.
