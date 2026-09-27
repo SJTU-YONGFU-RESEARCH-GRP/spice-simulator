@@ -251,3 +251,30 @@ Stated plainly, because the difference matters:
   constant-`Vds` topology. They are deliberately wider than those measurements
   and are to be **tightened against the first recorded run of this channel
   in its own topology** — not left as a permanent hedge.
+
+### First CI run: what it found, and what changed
+
+The channel's first run on a runner failed with `exit code 143` after 8 minutes
+and produced **no output at all**. Two defects, both in the channel's own
+plumbing rather than in its method:
+
+1. **The progress log never reached the log.** The case loop drove the engine
+   with `execFileSync`, which blocks the event loop for the whole case. Node
+   cannot drain an async stdout while the loop is blocked, so every `[PASS]` /
+   `[FAIL]` line sat in a buffer and died with the process when it was
+   terminated. Locally this was invisible, because a process that exits
+   *normally* flushes on the way out. The loop is now `await`-driven, so each
+   case's line reaches the log as it happens.
+2. **Nothing bounded a case.** A deck that never returns — the engine waiting on
+   a stdin nothing will write to, a sweep that will not converge — had no ceiling
+   below the six-hour job default. Each case now carries a 150 s timeout and
+   reports a hang as a *named* failure, and the job carries `timeout-minutes: 30`
+   as a backstop.
+
+The child also writes its result to a **file** rather than to stdout: a payload
+written to an async pipe and followed immediately by `process.exit()` can be
+truncated, and a truncated payload arrives at the parent as invalid JSON — that
+is, as a failed case, which is the wrong story about what went wrong.
+
+The `--static-only` harness check passed on that same run, before the channel
+itself was reached.

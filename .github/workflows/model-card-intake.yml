@@ -45,6 +45,10 @@ permissions:
 jobs:
   intake:
     runs-on: ubuntu-latest
+    # Nine engine instantiations plus the mutation test. Each case carries its own
+    # 150 s ceiling inside the channel, so this bound is the backstop for the
+    # whole job: without it, a hang burns the runner for the six-hour default.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -74,9 +74,12 @@
  */
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, copyFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve, dirname, isAbsolute } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..');
@@ -98,6 +101,12 @@ const VERBOSE = !!opt('verbose', false);
 const REQUIRE = !!opt('require', false);
 const ONLY = String(opt('only', '')).split(',').map((s) => s.trim()).filter(Boolean);
 const RUN_SPEC = opt('run', null);
+// Per-case ceiling. A deck that never returns (the engine waiting on a stdin
+// nothing will write to, or a sweep that will not converge) must fail THIS case
+// with a named timeout rather than wedge the whole job: the first CI run of this
+// channel spent 8 minutes producing no output at all, which is exactly the
+// failure this bound turns into a diagnosable one.
+const CASE_TIMEOUT_MS = Number(opt('timeout-ms', 150000));
 
 const VENDOR = join(SITE, 'vendor', 'ngspice.js');
 const RESULT_PATH = join(REPO_ROOT, 'model-card-intake-result.json');
@@ -110,8 +119,7 @@ const FIXTURES = join(HERE, 'model-card-fixtures');
  * scripts/numeric-crosscheck.mjs, which established this). The parent re-execs
  * this file with --run=<specfile> for each case.
  */
-async function runOne(specPath) {
-  const spec = JSON.parse(readFileSync(specPath, 'utf8'));
+async function runEngine(spec) {
   const dir = mkdtempSync(join(tmpdir(), 'intake-'));
   // .mjs so the copy is parsed as ESM wherever the temp dir lives.
   const modulePath = join(dir, 'ngspice.mjs');
@@ -162,7 +170,34 @@ async function runOne(specPath) {
   try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
 
   const parsed = raw ? parseRaw(raw) : { variables: [], points: [] };
-  return { produced: raw !== null, log: log.join('\n'), variables: parsed.variables, points: parsed.points };
+  // The log is bounded: it is carried back so the refusal classifier can read
+  // the engine's own words, and the tail holds the diagnostics while the head is
+  // just the banner. Nine unbounded logs is memory the runner does not need.
+  return { produced: raw !== null, log: log.join('\n').slice(-8000), variables: parsed.variables, points: parsed.points };
+}
+
+/**
+ * Child entry: run one deck, write the result to the spec's resultPath.
+ *
+ * The result goes to a FILE rather than to stdout. A child that writes a payload
+ * to an async pipe and then calls process.exit() can have that write truncated,
+ * and a truncated payload reaches the parent as invalid JSON -- i.e. as a failed
+ * case, which is the wrong story. A file write has no such race.
+ */
+async function runOne(specPath) {
+  let result;
+  let resultPath = null;
+  try {
+    const spec = JSON.parse(readFileSync(specPath, 'utf8'));
+    resultPath = spec.resultPath;
+    result = await runEngine(spec);
+  } catch (e) {
+    result = { produced: false, log: 'engine driver threw: ' + String((e && e.stack) || e), variables: [], points: [] };
+  }
+  if (resultPath) {
+    try { writeFileSync(resultPath, JSON.stringify(result)); } catch { /* the parent reports the missing file */ }
+  }
+  process.exit(0);
 }
 
 /** ASCII rawfile -> variable names + rows of cell strings. */
@@ -182,9 +217,7 @@ function parseRaw(raw) {
 }
 
 if (RUN_SPEC) {
-  runOne(String(RUN_SPEC))
-    .then((r) => { process.stdout.write(JSON.stringify(r)); process.exit(0); })
-    .catch((e) => { process.stdout.write(JSON.stringify({ produced: false, log: String(e && e.stack || e), variables: [], points: [] })); process.exit(0); });
+  runOne(String(RUN_SPEC));
 }
 
 // -------------------------------------------------------------- parent mode
@@ -202,16 +235,32 @@ const contract = JSON.parse(readFileSync(CONTRACT_PATH, 'utf8'));
 const CFG = contract.contract;
 
 /** Run one deck spec through a fresh engine process. */
-function drive(spec) {
+async function drive(spec) {
   const dir = mkdtempSync(join(tmpdir(), 'intake-spec-'));
-  const specPath = join(dir, 'spec.json');
-  writeFileSync(specPath, JSON.stringify({ vendor: VENDOR, ...spec }));
   try {
-    const out = execFileSync(process.execPath, [fileURLToPath(import.meta.url), '--run=' + specPath],
-      { encoding: 'utf8', maxBuffer: 1 << 26 });
-    return JSON.parse(out);
-  } catch (e) {
-    return { produced: false, log: 'driver failed: ' + String((e && e.stderr) || e), variables: [], points: [] };
+    const specPath = join(dir, 'spec.json');
+    const resultPath = join(dir, 'result.json');
+    writeFileSync(specPath, JSON.stringify({ vendor: VENDOR, resultPath, ...spec }));
+    try {
+      // Awaited, not blocking. The first CI run of this channel used
+      // execFileSync, which stops the event loop for the whole case: Node cannot
+      // drain stdout while the loop is blocked, so eight minutes of per-case
+      // progress sat in a buffer and died with the process, leaving a log that
+      // said nothing but "exit code 143".
+      await execFileAsync(process.execPath, [fileURLToPath(import.meta.url), '--run=' + specPath],
+        { encoding: 'utf8', maxBuffer: 1 << 26, timeout: CASE_TIMEOUT_MS, killSignal: 'SIGKILL' });
+    } catch (e) {
+      const timedOut = !!(e && (e.signal || e.killed));
+      const detail = timedOut
+        ? `the engine child was killed after ${CASE_TIMEOUT_MS} ms -- the same deck returns in seconds elsewhere, so reaching this bound means a HANG, not a slow sweep`
+        : String((e && e.stderr) || e).slice(-2000);
+      return { produced: false, log: `driver failure: ${detail}\n` + String((e && e.stdout) || ''), variables: [], points: [] };
+    }
+    try {
+      return JSON.parse(readFileSync(resultPath, 'utf8'));
+    } catch (e) {
+      return { produced: false, log: 'driver produced no readable result file: ' + String(e), variables: [], points: [] };
+    }
   } finally {
     try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
   }
@@ -276,13 +325,16 @@ const libraryText = () => readFileSync(join(SITE, 'models', CFG.library.file), '
 const rows = [];
 let assertions = 0, failures = 0;
 
-function record(name, what, checks) {
+function record(name, what, checks, elapsedMs) {
   const bad = checks.filter((c) => !c.ok);
   assertions += checks.length;
   failures += bad.length;
-  rows.push({ name, what, passed: bad.length === 0, checks });
+  rows.push({ name, what, passed: bad.length === 0, checks, elapsedMs });
   const mark = bad.length ? '[FAIL]' : '[PASS]';
-  console.log(`${mark} ${name}`);
+  // Elapsed time on every line, and resident memory alongside it under
+  // --verbose: the two numbers that make a resource problem visible in the log
+  // instead of inferable from a duration in the run summary.
+  console.log(`${mark} ${name}  ${(elapsedMs / 1000).toFixed(1)}s${VERBOSE ? `  rss ${(process.memoryUsage().rss / 1048576).toFixed(0)}MB` : ''}`);
   if (VERBOSE || bad.length) {
     for (const c of checks) console.log(`       ${c.ok ? 'ok  ' : 'BAD '} ${c.label}${c.ok ? '' : `  <- ${c.detail ?? ''}`}`);
   }
@@ -290,10 +342,12 @@ function record(name, what, checks) {
 
 for (const c of contract.cases) {
   if (ONLY.length && !ONLY.includes(c.name)) continue;
+  const t0 = Date.now();
+  console.log(`[start] ${c.name}`);
 
   if (c.kind === 'recover') {
     const card = c.card ? readFileSync(join(FIXTURES, c.card), 'utf8') : null;
-    const run = drive({
+    const run = await drive({
       deck: recoveryDeck({
         card, device: c.device, include: c.include ? CFG.library.include : null, corner: c.corner,
       }),
@@ -328,22 +382,22 @@ for (const c of contract.cases) {
         });
       }
     }
-    record(c.name, c.what, checks);
+    record(c.name, c.what, checks, Date.now() - t0);
     continue;
   }
 
   if (c.kind === 'refuse') {
     const card = readFileSync(join(FIXTURES, c.card), 'utf8');
-    const run = drive({ deck: recoveryDeck({ card, device: 'n1' }), files: [] });
+    const run = await drive({ deck: recoveryDeck({ card, device: 'n1' }), files: [] });
     const reason = refusalReason(run.log);
     record(c.name, c.what, [
       { ok: !run.produced, label: 'the card must be REFUSED (a card that loads while meaning something else is the failure this guards)', detail: 'it loaded' },
       { ok: reason === c.expectReason, label: `refusal reason is "${c.expectReason}" (got "${reason}")` },
-    ]);
+    ], Date.now() - t0);
     continue;
   }
 
-  record(c.name, c.what, [{ ok: false, label: `unknown case kind "${c.kind}"` }]);
+  record(c.name, c.what, [{ ok: false, label: `unknown case kind "${c.kind}"` }], Date.now() - t0);
 }
 
 // ------------------------------------------------------------------ report
@@ -367,6 +421,9 @@ if (AS_JSON) process.stdout.write(JSON.stringify({ cases: rows, assertions, fail
 
 if (REQUIRE && rows.length === 0) {
   console.error('model-card-intake: --require was given but no case ran');
-  process.exit(2);
+  process.exitCode = 2;
+} else {
+  // exitCode rather than exit(): process.exit() can drop buffered stdout, and
+  // the whole point of the rebuilt channel is that its log survives the run.
+  process.exitCode = failures ? 1 : 0;
 }
-process.exit(failures ? 1 : 0);
