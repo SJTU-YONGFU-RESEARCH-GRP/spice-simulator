@@ -325,6 +325,10 @@ const libraryText = () => readFileSync(join(SITE, 'models', CFG.library.file), '
 const rows = [];
 let assertions = 0, failures = 0;
 
+const IN_ACTIONS = !!process.env.GITHUB_ACTIONS;
+/** GitHub workflow-command escaping: %, CR and LF all have to be encoded. */
+const cmdEscape = (s) => String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+
 function record(name, what, checks, elapsedMs) {
   const bad = checks.filter((c) => !c.ok);
   assertions += checks.length;
@@ -337,6 +341,14 @@ function record(name, what, checks, elapsedMs) {
   console.log(`${mark} ${name}  ${(elapsedMs / 1000).toFixed(1)}s${VERBOSE ? `  rss ${(process.memoryUsage().rss / 1048576).toFixed(0)}MB` : ''}`);
   if (VERBOSE || bad.length) {
     for (const c of checks) console.log(`       ${c.ok ? 'ok  ' : 'BAD '} ${c.label}${c.ok ? '' : `  <- ${c.detail ?? ''}`}`);
+  }
+  if (bad.length && IN_ACTIONS) {
+    // Emitted as an ANNOTATION, not merely as a log line. A step's log requires
+    // repository permissions to read; the checks API that carries annotations
+    // does not. So the reason a case failed stays readable by anyone reviewing
+    // the branch, which is the same reason the channel writes its result file.
+    const detail = bad.slice(0, 2).map((c) => `${c.label}${c.detail ? ` <- ${c.detail}` : ''}`).join(' | ');
+    console.log(`::error::${name}: ${cmdEscape(detail).slice(0, 800)}`);
   }
 }
 
@@ -405,7 +417,9 @@ for (const c of contract.cases) {
 const summary = `cases=${rows.length} assertions=${assertions} failures=${failures}`;
 console.log(`\n${summary}`);
 if (failures) {
-  console.log('FAILED cases: ' + rows.filter((r) => !r.passed).map((r) => r.name).join(', '));
+  const names = rows.filter((r) => !r.passed).map((r) => r.name).join(', ');
+  console.log('FAILED cases: ' + names);
+  if (IN_ACTIONS) console.log(`::error::${cmdEscape(`model-card-intake ${summary} -- ${names}`)}`);
 }
 
 try {
