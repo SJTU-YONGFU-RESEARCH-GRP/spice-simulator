@@ -240,9 +240,32 @@ The deep-inversion window is kept — it is the regime where `Vgsteff -> Vgs - V
 exactly and the closed form is therefore the operative law — but it is kept on
 principle, not because it repaired anything.
 
-The numbers quoted in this section were measured on resistive-load decks before
-the channel used constant `Vds`. They are the *shape* of the answer; the
-authoritative values are the ones each run records for itself.
+### What the channel records
+
+Every recovery case emits its measured values as a workflow notice, so these are
+read off the run rather than transcribed from a deck:
+
+| case | VTO recovered | declared | KP recovered | declared | KP error |
+|---|---|---|---|---|---|
+| `shipped_library_tt` | 0.500000 | 0.5 | 2.000000e-4 | 2.000000e-4 | 0 |
+| `shipped_library_ss` | 0.580000 | 0.58 | 1.700000e-4 | 1.700000e-4 | 0 |
+| `shipped_library_ff` | 0.420000 | 0.42 | 2.300000e-4 | 2.300000e-4 | 0 |
+| `control_level1` | 0.500000 | 0.5 | 2.000000e-4 | 2.000000e-4 | 0 |
+| `bsim3_longchannel` | 0.474680 | 0.5 | 2.303018e-4 | 2.302040e-4 | **+0.042 %** |
+| `bsim4_longchannel` | 0.481744 | 0.5 | 2.239930e-4 | 2.302040e-4 | **−2.698 %** |
+
+The agreement is worth being explicit about, because it is the whole argument for
+the method:
+
+- BSIM3's measured threshold is **0.474680**. The resistive-load measurement above
+  put it at 0.474681. BSIM4's is **0.481744** against 0.481702 there. Two
+  topologies, agreement to five significant figures.
+- The two KP values derived arithmetically from the previous run's numbers
+  (`2.142342e-4 * 1.075` and `2.083656e-4 * 1.075`) landed on 2.303018e-4 and
+  2.239930e-4 — the two values this run measured.
+- The shipped library is recovered exactly at all three corners, through its own
+  expression path. That is an artifact guard in its own right: it says the engine
+  *is* the device `cmos.lib` declares, not merely that the file exists.
 
 ### BSIM4 (level=14), long-channel limit
 
@@ -354,3 +377,8 @@ not the cause, and the draft of section 4 that said it was is corrected there.
 The cause was the channel-length-modulation correction: `2.302040 / 2.142342 =
 1.0746` against `1 + 0.05 * 1.5 = 1.075`. The extraction was dividing out the
 LEVEL-1 library's `LAMBDA` on cards that have no channel-length modulation.
+
+**Run 5** — **green**, 53 s, all six steps: the four LEVEL-1 cases exact, both
+refusal cases refused, and the two BSIM cases landing at +0.042 % and −2.698 %,
+which is what run 4's arithmetic predicted for them. The mutation test runs after
+the channel and passes, so the channel is not vacuous on a runner either.

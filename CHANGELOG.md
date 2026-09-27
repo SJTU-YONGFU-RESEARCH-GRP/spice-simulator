@@ -48,20 +48,22 @@ form first — a literal LEVEL-1 card recovers to 3e-9 relative, and
 all three corners to 1e-8 — and then applied to the roadmap's open item:
 
 - **BSIM3** (level 8), reduced to its long-channel limit, uses the declared
-  mobility and oxide thickness to **+0.08 %**; its threshold sits **−24.7 mV**
-  from the declared `VTH0`, an offset that is constant to six decimals as `VTH0`
-  is swept 0.2 → 1.0 V and varies only with oxide thickness and temperature.
-- **BSIM4** (level 14) under the identical switch-off set keeps a **−2.7 %**
-  transconductance residual that survives zeroing `A0`/`AGS`/`B0`/`B1` and the
-  geometry offsets `DWC`/`DLC`/`XW`.
+  mobility and oxide thickness to **+0.042 %** (`KP` 2.303018e-4 against the
+  declared `U0*Cox` 2.302040e-4); its threshold sits **−24.7 mV** from the declared
+  `VTH0`, an offset that is constant to six decimals as `VTH0` is swept 0.2 → 1.0 V
+  and varies only with oxide thickness and temperature.
+- **BSIM4** (level 14) under the identical switch-off set keeps a **−2.698 %**
+  transconductance residual (`KP` 2.239930e-4) that survives zeroing
+  `A0`/`AGS`/`B0`/`B1` and the geometry offsets `DWC`/`DLC`/`XW`.
 
-The first two of those were measured on resistive-load decks; the channel then
-reproduced them at constant `Vds` — BSIM3 at +0.04 % and BSIM4 at −2.70 % — which
-is two topologies and two implementations agreeing. Getting there took a run that
-failed: the extraction had been dividing out the shipped library's `LAMBDA` on
-cards whose `pclm` is 1e-12, i.e. on cards that have no channel-length modulation,
-which put their KP 7.5 % low (`2.302040 / 2.142342 = 1.0746` against
-`1 + 0.05*1.5 = 1.075`). The correction is now per-case.
+Both figures are the channel's own, recorded on a runner and emitted as workflow
+notices. They agree with measurements taken independently on resistive-load decks
+in a different implementation — BSIM3's threshold 0.474680 there against 0.474681
+here, BSIM4's 0.481744 against 0.481702. Getting there took a run that failed: the
+extraction had been dividing out the shipped library's `LAMBDA` on cards whose
+`pclm` is 1e-12, i.e. on cards with no channel-length modulation, which put their
+KP 7.5 % low (`2.302040 / 2.142342 = 1.0746` against `1 + 0.05*1.5 = 1.075`). The
+correction is now per-case.
 
 Neither reduction asserts anything about BSIM outside the long-channel limit, and
 no cause is claimed for the threshold offset — only its measured behaviour.
