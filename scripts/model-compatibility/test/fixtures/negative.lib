@@ -1,0 +1,3 @@
+.model unsupported NMOS LEVEL=999
+.model invalid NMOS LEVEL=1 KP=1e-
+.model suspicious NMOS LEVEL=8 QMTCENCV=0

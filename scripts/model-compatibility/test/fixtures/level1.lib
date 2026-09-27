@@ -1,0 +1,4 @@
+* MOS1 fixture with continuation and units
+.model simple_n NMOS (LEVEL=1 VTO=0.5
++ KP=200u GAMMA=0.4 PHI=0.7 LAMBDA=0.05)
+.model simple_p PMOS LEVEL=1 VTO=-0.5 KP=100u

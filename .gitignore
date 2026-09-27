@@ -9,6 +9,7 @@ node_modules/
 _tmp_quiz_challenge_platform/
 smoke-result.json
 numeric-crosscheck-result.json
+model-compatibility-report.json
 offline-sim-result.json
 sw-cache-negctl-result.json
 precache-weight-result.json

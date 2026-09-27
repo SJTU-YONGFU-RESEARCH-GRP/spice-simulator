@@ -233,6 +233,11 @@ UX defect can pass every guard, which is why it exists.
 
 ## Documentation
 
+Model intake and engine execution are checked separately by
+`node scripts/model-compatibility.mjs site/models/ --runtime`.
+See [Model Compatibility](./docs/MODEL_COMPATIBILITY.md) for static analysis,
+isolated WASM probes, failure reduction, reports and CI exit codes.
+
 | Document | What it covers |
 |---|---|
 | [`README.md`](./README.md) | This file — overview, features, architecture, layout, getting started. |

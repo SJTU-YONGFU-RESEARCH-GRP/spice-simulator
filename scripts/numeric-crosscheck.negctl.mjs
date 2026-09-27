@@ -43,7 +43,7 @@
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -122,6 +122,7 @@ const suite = mkdtempSync(join(tmpdir(), 'nc-negctl-'));
 function rehome(text, id, extra) {
   let out = text
     .replace("resolve(HERE, '..')", JSON.stringify(REPO_ROOT))
+    .replace("'./lib/ngspice-runner.mjs'", JSON.stringify(pathToFileURL(join(HERE, 'lib', 'ngspice-runner.mjs')).href))
     .replace("join(REPO_ROOT, 'numeric-crosscheck-result.json')",
       JSON.stringify(join(suite, `result-${id}.json`)));
   // A mutant that breaks the ARTIFACT points the mutant guard at a mutated copy

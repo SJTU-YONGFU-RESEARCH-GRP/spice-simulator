@@ -67,6 +67,9 @@
     "patch:header": "node scripts/patch-outbound.mjs --manifest=scripts/panel-header.json",
     "check:header": "node scripts/check-artifacts.mjs",
     "check:header:neg": "node scripts/panel-header.negctl.mjs",
-    "audit:ux": "node scripts/ux-audit.mjs"
+    "audit:ux": "node scripts/ux-audit.mjs",
+    "model:compat": "node scripts/model-compatibility.mjs",
+    "check:model:compat": "node --test scripts/model-compatibility/test/*.test.mjs",
+    "check:model:runtime": "node --test scripts/model-compatibility/test/runtime.test.mjs"
   }
 }
