@@ -189,13 +189,19 @@ short-channel (`DVT*`), DIBL (`ETA0`, `PDIBL*`), series-resistance (`RDSW`),
 mobility-degradation (`UA`/`UB`/`UC`), velocity-saturation (`VSAT`) and
 bulk-charge (`K1`/`K2`) switch off, with `pclm=1e-12`.
 
-- **Transconductance** recovers to within **+0.08 %** of the declared
-  `U0 * Cox = 2.302040e-4 A/V^2` (`U0=600 cm^2/Vs`, `TOX=9 nm`). The engine is
-  using the mobility and oxide thickness the card declares.
-- **Threshold** sits **−24.7 mV** from the declared `VTH0`. Characterised:
-  sweeping `VTH0` from 0.2 V to 1.0 V leaves the offset at **−0.024667 V**,
-  constant to six decimals — it does not track `VTH0`. It does move with oxide
-  thickness (−24.9 mV at 5 nm, −21.0 mV at 22 nm) and with temperature.
+- **Transconductance** recovers to **+0.042 %** of the declared
+  `U0 * Cox = 2.302040e-4 A/V^2` (`U0=600 cm^2/Vs`, `TOX=9 nm`), as the channel
+  records it: the engine is using the mobility and oxide thickness the card
+  declares.
+- **Threshold** recovers to **0.474680**, i.e. **−25.3 mV** from the declared
+  `VTH0` of 0.5 V. Characterised: sweeping `VTH0` from 0.2 V to 1.0 V leaves the
+  offset constant to six decimals, so it does not track `VTH0`; it does move with
+  oxide thickness (−24.9 mV at 5 nm, −21.0 mV at 22 nm) and with temperature. The
+  second decimal is a property of the fit window rather than of the model — the
+  deep windows below agree to 0.2 mV while the widest shifts by 28 mV — so the
+  offset is quoted to a tenth of a millivolt and no further. An earlier revision
+  of this section said −24.7 mV, which was the same measurement through a
+  different window; the channel's own recorded value is the one used here.
 - The recovered threshold is **stable across fit windows** in deep strong
   inversion and drifts only as the window is extended into moderate inversion,
   which is BSIM3's deliberate `Vgsteff` smoothing:
@@ -291,9 +297,9 @@ shape of "BSIM4 absolute accuracy" as it stands.
 Stated plainly, because the difference matters:
 
 - **Claimed.** In its long-channel limit the engine uses the BSIM3 mobility and
-  oxide thickness the card declares, within 0.08 %; its threshold is 24.7 mV
-  below the declared `VTH0` under the stated conditions. BSIM4 keeps a ~2.7 %
-  transconductance residual under any reduction tried here.
+  oxide thickness the card declares, to within 0.05 %; its threshold recovers
+  25.3 mV below the declared `VTH0` under the stated conditions. BSIM4 keeps a
+  ~2.7 % transconductance residual under any reduction tried here.
 - **Claimed.** The shipped `cmos.lib` behaves as the device it declares at all
   three corners, to 1e-8 relative.
 - **Claimed.** A card with a misspelled parameter, or with an out-of-range value,
@@ -311,7 +317,7 @@ Stated plainly, because the difference matters:
   long-channel limit, or at bias points other than those exercised. The
   reduction switches second-order effects **off**; it says nothing about what
   they do when they are on.
-- **NOT claimed.** Any diagnosis of *why* the threshold sits 24.7 mV low. Its
+- **NOT claimed.** Any diagnosis of *why* the threshold recovers 25.3 mV low. Its
   **behaviour** was measured (constant in `VTH0`, varying with `TOX` and
   temperature); its **mechanism** was not identified, and no defect is asserted.
 - **NOT claimed.** That `spice_model_collections` is wrong. Its cards are

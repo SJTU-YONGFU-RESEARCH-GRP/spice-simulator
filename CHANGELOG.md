@@ -49,9 +49,11 @@ all three corners to 1e-8 — and then applied to the roadmap's open item:
 
 - **BSIM3** (level 8), reduced to its long-channel limit, uses the declared
   mobility and oxide thickness to **+0.042 %** (`KP` 2.303018e-4 against the
-  declared `U0*Cox` 2.302040e-4); its threshold sits **−24.7 mV** from the declared
-  `VTH0`, an offset that is constant to six decimals as `VTH0` is swept 0.2 → 1.0 V
-  and varies only with oxide thickness and temperature.
+  declared `U0*Cox` 2.302040e-4); its threshold recovers **−25.3 mV** from the
+  declared `VTH0`, an offset that is constant to six decimals as `VTH0` is swept
+  0.2 → 1.0 V and varies only with oxide thickness and temperature — though its
+  second decimal is a property of the fit window, so it is quoted to a tenth of a
+  millivolt and no further.
 - **BSIM4** (level 14) under the identical switch-off set keeps a **−2.698 %**
   transconductance residual (`KP` 2.239930e-4) that survives zeroing
   `A0`/`AGS`/`B0`/`B1` and the geometry offsets `DWC`/`DLC`/`XW`.

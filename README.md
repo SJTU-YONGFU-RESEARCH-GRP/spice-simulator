@@ -264,7 +264,7 @@ Where this is heading, in the order the work is actually gated. Items under
   rather than implied. **Partially scoped:** `scripts/model-card-intake.mjs`
   recovers `VTO` and `KP` from a constant-`Vds` transfer curve in the
   long-channel limit — BSIM3 uses the declared mobility and oxide thickness to
-  0.08 %, with a threshold 24.7 mV below the declared `VTH0`; BSIM4 keeps a
+  0.05 %, with a threshold 25.3 mV below the declared `VTH0`; BSIM4 keeps a
   ~2.7 % transconductance residual that no switch-off set removed. See
   [`docs/MODEL_CARD_INTAKE.md`](./docs/MODEL_CARD_INTAKE.md).
 - **A real corner story.** The shipped `tt`/`ss`/`ff` are teaching corners over
